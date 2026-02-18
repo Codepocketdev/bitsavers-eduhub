@@ -147,6 +147,9 @@ function ComposeModal({ user, profiles, onClose, onPublished }) {
       const pool = getPool()
       // publish to all relays — returns array of promises
       await Promise.any(pool.publish(RELAYS, signed))
+      // Mark as seen immediately so the live subscription doesn't show it as "new post"
+      feedCache.bitsavers.seenIds.add(signed.id)
+      feedCache.bitcoin.seenIds.add(signed.id)
       setStatus('ok')
       setTimeout(() => { onPublished(signed); onClose() }, 800)
     } catch (e) {
@@ -205,19 +208,38 @@ const TABS = [
   { id: 'bitcoin',   label: 'Bitcoin',    icon: <Globe size={13} /> },
 ]
 
+// ── Per-tab cache lives OUTSIDE the component so it survives tab switches ──
+// This is the fix for mobile empty feed on tab switch
+const feedCache = {
+  bitsavers: { posts: [], profiles: {}, seenIds: new Set() },
+  bitcoin:   { posts: [], profiles: {}, seenIds: new Set() },
+}
+
 function NostrFeed({ user }) {
   const [tab, setTab] = useState('bitsavers')
-  const [posts, setPosts] = useState([])
-  const [profiles, setProfiles] = useState({})
-  const [loading, setLoading] = useState(true)
+  const [posts, setPosts] = useState(feedCache.bitsavers.posts)
+  const [profiles, setProfiles] = useState(feedCache.bitsavers.profiles)
+  const [loading, setLoading] = useState(feedCache.bitsavers.posts.length === 0)
   const [newPosts, setNewPosts] = useState([])
   const [showCompose, setShowCompose] = useState(false)
   const subRef = useRef(null)
-  const seenIds = useRef(new Set())
-  const isInitial = useRef(true)
+  const isInitial = useRef(feedCache.bitsavers.posts.length === 0)
+
+  // Switch tab — load from cache instantly, no spinner if we have data
+  const switchTab = (newTab) => {
+    if (newTab === tab) return
+    // Save current new posts into cache before switching
+    setNewPosts([])
+    setTab(newTab)
+    const cached = feedCache[newTab]
+    setPosts(cached.posts)
+    setProfiles(cached.profiles)
+    setLoading(cached.posts.length === 0) // only show loader if no cache
+    isInitial.current = cached.posts.length === 0
+  }
 
   const fetchProfiles = (pubkeys) => {
-    const missing = pubkeys.filter(pk => !profiles[pk])
+    const missing = pubkeys.filter(pk => !feedCache[tab]?.profiles[pk])
     if (!missing.length) return
     const pool = getPool()
     const sub = pool.subscribe(
@@ -227,6 +249,7 @@ function NostrFeed({ user }) {
         onevent(e) {
           try {
             const p = JSON.parse(e.content)
+            if (feedCache[tab]) feedCache[tab].profiles[e.pubkey] = p
             setProfiles(prev => ({ ...prev, [e.pubkey]: p }))
           } catch {}
         },
@@ -236,52 +259,53 @@ function NostrFeed({ user }) {
   }
 
   useEffect(() => {
-    setLoading(true)
-    setPosts([])
-    setNewPosts([])
-    seenIds.current = new Set()
-    isInitial.current = true
-
     const pool = getPool()
-    const since = Math.floor(Date.now() / 1000) - 86400 // last 24h
+    const since = Math.floor(Date.now() / 1000) - 86400
     const filter = tab === 'bitsavers'
       ? { kinds: [1], '#t': ['bitsavers'], since, limit: 50 }
       : { kinds: [1], '#t': ['bitcoin'], since, limit: 50 }
 
+    let batchTimer
     const batch = []
+    const cache = feedCache[tab]
 
     const sub = pool.subscribe(RELAYS, filter, {
       onevent(event) {
-        if (seenIds.current.has(event.id)) return
+        if (cache.seenIds.has(event.id)) return
         if (!event.content?.trim()) return
-        seenIds.current.add(event.id)
+        cache.seenIds.add(event.id)
 
         if (isInitial.current) {
           batch.push(event)
-          // Debounce batch state update
           clearTimeout(batchTimer)
           batchTimer = setTimeout(() => {
-            setPosts(prev => {
-              const combined = [...prev, ...batch.splice(0)]
-              return combined.sort((a, b) => b.created_at - a.created_at)
-            })
-            fetchProfiles(batch.map(e => e.pubkey))
+            const toAdd = batch.splice(0)
+            cache.posts = [...cache.posts, ...toAdd]
+              .sort((a, b) => b.created_at - a.created_at)
+              .slice(0, 100) // cap at 100 per tab
+            setPosts([...cache.posts])
+            fetchProfiles(toAdd.map(e => e.pubkey))
           }, 300)
         } else {
+          // New live post — add to cache too so it persists on tab switch
+          cache.posts = [event, ...cache.posts].slice(0, 100)
           setNewPosts(prev => [event, ...prev])
         }
       },
       oneose() {
         isInitial.current = false
         setLoading(false)
-        fetchProfiles(batch.map(e => e.pubkey))
+        if (batch.length) {
+          cache.posts = [...cache.posts, ...batch.splice(0)]
+            .sort((a, b) => b.created_at - a.created_at)
+            .slice(0, 100)
+          setPosts([...cache.posts])
+        }
+        fetchProfiles(cache.posts.map(e => e.pubkey))
       },
     })
 
-    let batchTimer
     subRef.current = sub
-
-    // Safety timeout
     const timeout = setTimeout(() => setLoading(false), 10000)
 
     return () => {
@@ -305,7 +329,7 @@ function NostrFeed({ user }) {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 4, marginBottom: 16 }}>
         {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
+          <button key={t.id} onClick={() => switchTab(t.id)} style={{
             flex: 1, background: tab === t.id ? C.accent : 'transparent',
             border: 'none', color: tab === t.id ? C.bg : C.muted,
             padding: '9px 8px', borderRadius: 9, fontWeight: 700, fontSize: 13, cursor: 'pointer',
