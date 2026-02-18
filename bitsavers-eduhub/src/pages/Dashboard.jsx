@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { Menu, X, BookOpen, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe } from 'lucide-react'
+import { Menu, X, BookOpen, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield } from 'lucide-react'
 import { SimplePool } from 'nostr-tools/pool'
 import { publishProfile, fetchProfile } from '../lib/nostr'
 import ImageUpload from '../components/ImageUpload'
+import { isAdmin, isSuperAdmin } from '../config/admins'
+import AdminPanel from './AdminPanel'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 
@@ -106,6 +108,11 @@ function PostCard({ event, profiles }) {
             {profile.nip05 && (
               <span style={{ fontSize: 11, color: C.accent, display: 'flex', alignItems: 'center', gap: 3 }}>
                 <CheckCircle size={11} /> {profile.nip05}
+              </span>
+            )}
+            {npub && isAdmin(npub) && (
+              <span style={{ fontSize: 10, fontWeight: 800, color: '#080808', background: C.accent, padding: '2px 7px', borderRadius: 20, letterSpacing: 0.5 }}>
+                ADMIN
               </span>
             )}
           </div>
@@ -581,6 +588,7 @@ const NAV = [
   { id: 'community', icon: <Users size={18} />,      label: 'Community' },
   { id: 'news',      icon: <Newspaper size={18} />,  label: 'News' },
   { id: 'profile',   icon: <User size={18} />,       label: 'My Profile' },
+  { id: 'admin',     icon: <Shield size={18} />,     label: 'Admin Panel', adminOnly: true },
 ]
 
 // ─── Main dashboard ───────────────────────────────────────────────────────────
@@ -666,7 +674,7 @@ export default function Dashboard() {
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: '10px 10px', overflowY: 'auto' }}>
-          {NAV.map(item => (
+          {NAV.filter(item => !item.adminOnly || isAdmin(user?.npub)).map(item => (
             <button key={item.id} onClick={() => go(item.id)} style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 12,
               padding: '13px 14px', borderRadius: 10, border: 'none',
@@ -706,6 +714,7 @@ export default function Dashboard() {
         {page === 'community' && <Placeholder emoji="🌍" title="Community" sub="Campus groups launching next!" />}
         {page === 'news'      && <Placeholder emoji="📰" title="News" sub="Bitcoin news feed coming soon!" />}
         {page === 'profile'   && <ProfilePage user={user} />}
+        {page === 'admin'     && <AdminPanel user={user} />}
       </main>
 
       <style>{`
