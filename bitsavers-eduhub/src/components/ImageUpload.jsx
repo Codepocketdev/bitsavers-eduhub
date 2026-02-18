@@ -5,7 +5,7 @@ async function uploadImage(file) {
   const formData = new FormData()
   formData.append('image', file)
 
-  const res = await fetch('https://api.imgbb.com/1/upload?key=1084ab4c22e54a5b1d1969758045829a', {
+  const res = await fetch(`https://api.imgbb.com/1/upload?key=${import.meta.env.VITE_IMGBB_KEY}`, {
     method: 'POST',
     body: formData,
   })
