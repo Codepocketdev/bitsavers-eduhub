@@ -5,6 +5,8 @@ import { publishProfile, getPool } from '../lib/nostr'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 import ImageUpload from '../components/ImageUpload'
+import AdminAssignments from './AdminAssignments'
+import { Users, Newspaper, Calendar, Image, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle } from 'lucide-react'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 
@@ -23,10 +25,11 @@ const nsecToBytes = (nsec) => {
 
 // ─── Section Tab ─────────────────────────────────────────────────────────────
 const SECTIONS = [
-  { id: 'admins',  label: '👥 Admins',        },
-  { id: 'news',    label: '📰 News',           },
-  { id: 'events',  label: '📅 Events',         },
-  { id: 'media',   label: '🖼️ Media Library',  },
+  { id: 'admins',      label: 'Admins',      },
+  { id: 'news',        label: 'News',        },
+  { id: 'events',      label: 'Events',      },
+  { id: 'media',       label: 'Media',       },
+  { id: 'assignments', label: 'Assignments', },
 ]
 
 // ─── Shared components ────────────────────────────────────────────────────────
@@ -63,11 +66,17 @@ const Btn = ({ onClick, children, disabled, variant = 'primary', style = {} }) =
   }}>{children}</button>
 )
 
-const StatusMsg = ({ msg }) => !msg ? null : (
-  <div style={{ padding: '10px 14px', background: msg.startsWith('✅') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${msg.startsWith('✅') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 9, color: msg.startsWith('✅') ? C.green : C.red, fontSize: 13, marginBottom: 14 }}>
-    {msg}
-  </div>
-)
+const StatusMsg = ({ msg }) => {
+  if (!msg) return null
+  const ok = msg.startsWith('ok:')
+  const text = msg.replace(/^(ok|err): /, '')
+  return (
+    <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, background: ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 9, color: ok ? C.green : C.red, fontSize: 13, marginBottom: 14 }}>
+      {ok ? <CheckCircle size={14}/> : <AlertCircle size={14}/>}
+      {text}
+    </div>
+  )
+}
 
 // ─── Manage Admins ────────────────────────────────────────────────────────────
 function ManageAdmins({ user }) {
@@ -86,18 +95,18 @@ function ManageAdmins({ user }) {
 
   const addAdmin = () => {
     const npub = newNpub.trim()
-    if (!npub.startsWith('npub1')) { setMsg('❌ Must be a valid npub1... key'); return }
-    if (admins.includes(npub)) { setMsg('❌ Already an admin'); return }
+    if (!npub.startsWith('npub1')) { setMsg('err: Must be a valid npub1... key'); return }
+    if (admins.includes(npub)) { setMsg('err: Already an admin'); return }
     saveAdmins([...admins, npub])
     setNewNpub(''); setNewLabel('')
-    setMsg('✅ Admin added!')
+    setMsg('ok: Admin added!')
     setTimeout(() => setMsg(''), 2000)
   }
 
   const removeAdmin = (npub) => {
-    if (npub === ADMIN_NPUBS[0]) { setMsg('❌ Cannot remove super admin'); setTimeout(() => setMsg(''), 2000); return }
+    if (npub === ADMIN_NPUBS[0]) { setMsg('err: Cannot remove super admin'); setTimeout(() => setMsg(''), 2000); return }
     saveAdmins(admins.filter(a => a !== npub))
-    setMsg('✅ Admin removed')
+    setMsg('ok: Admin removed')
     setTimeout(() => setMsg(''), 2000)
   }
 
@@ -116,7 +125,7 @@ function ManageAdmins({ user }) {
         {admins.map((npub, i) => (
           <div key={npub} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.border}` }}>
             <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: C.bg, flexShrink: 0 }}>
-              {i === 0 ? '👑' : '🛡️'}
+              {i === 0 ? <Crown size={16} color='#080808' /> : <Shield size={16} color='#080808' />}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12, color: i === 0 ? C.accent : C.text, fontWeight: 600 }}>
@@ -149,7 +158,7 @@ function PublishNews({ user }) {
   })
 
   const publish = async () => {
-    if (!title.trim() || !content.trim()) { setMsg('❌ Title and content required'); return }
+    if (!title.trim() || !content.trim()) { setMsg('err: Title and content required'); return }
     setPublishing(true); setMsg('')
     try {
       const storedNsec = localStorage.getItem('bitsavers_nsec')
@@ -160,7 +169,7 @@ function PublishNews({ user }) {
         kind: 1,
         created_at: Math.floor(Date.now() / 1000),
         tags: [['t', 'bitsavers'], ['t', 'bitsavers-news'], ['subject', title.trim()]],
-        content: `📢 ${title.trim()}\n\n${content.trim()}${imageUrl ? '\n\n' + imageUrl : ''}`,
+        content: `${title.trim()}\n\n${content.trim()}${imageUrl ? '\n\n' + imageUrl : ''}`,
       }, skBytes)
       await Promise.any(pool.publish(RELAYS, event))
 
@@ -170,8 +179,8 @@ function PublishNews({ user }) {
       localStorage.setItem('bitsavers_news', JSON.stringify(updated))
 
       setTitle(''); setContent(''); setImageUrl('')
-      setMsg('✅ News published to Nostr!')
-    } catch (e) { setMsg('❌ ' + (e.message || 'Failed to publish')) }
+      setMsg('ok: News published to Nostr!')
+    } catch (e) { setMsg('err: ' + (e.message || 'Failed to publish')) }
     setPublishing(false)
   }
 
@@ -184,7 +193,7 @@ function PublishNews({ user }) {
   return (
     <div>
       <Card>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 }}>📢 Publish Announcement</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Megaphone size={16} color={C.accent} /> Publish Announcement</div>
         <Input label="Title" value={title} onChange={setTitle} placeholder="e.g. New Course: Lightning Network 101" />
         <Textarea label="Content" value={content} onChange={setContent} placeholder="Write your announcement here…" rows={5} />
         <div style={{ marginBottom: 14 }}>
@@ -193,7 +202,7 @@ function PublishNews({ user }) {
         </div>
         <StatusMsg msg={msg} />
         <Btn onClick={publish} disabled={publishing || !title.trim() || !content.trim()}>
-          {publishing ? '📡 Publishing…' : '📢 Publish News'}
+          {publishing ? 'Publishing…' : 'Publish News'}
         </Btn>
       </Card>
 
@@ -232,13 +241,13 @@ function ManageEvents({ user }) {
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }))
 
   const addEvent = () => {
-    if (!form.title.trim() || !form.date) { setMsg('❌ Title and date required'); return }
+    if (!form.title.trim() || !form.date) { setMsg('err: Title and date required'); return }
     const newEvent = { id: Date.now().toString(), ...form, createdAt: Date.now() }
     const updated = [newEvent, ...events]
     setEvents(updated)
     localStorage.setItem('bitsavers_events', JSON.stringify(updated))
     setForm({ title: '', instructor: '', date: '', time: '', description: '', link: '' })
-    setMsg('✅ Event added!')
+    setMsg('ok: Event added!')
     setTimeout(() => setMsg(''), 2000)
   }
 
@@ -251,7 +260,7 @@ function ManageEvents({ user }) {
   return (
     <div>
       <Card>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 }}>📅 Add New Event</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Calendar size={16} color={C.accent} /> Add New Event</div>
         <Input label="Event Title" value={form.title} onChange={v => set('title', v)} placeholder="e.g. Bitcoin Wallets Masterclass" />
         <Input label="Instructor" value={form.instructor} onChange={v => set('instructor', v)} placeholder="e.g. Alex Wambui" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -277,9 +286,9 @@ function ManageEvents({ user }) {
                     </div>
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{event.title}</div>
-                  {event.instructor && <div style={{ fontSize: 12, color: C.muted }}>👨‍🏫 {event.instructor}</div>}
+                  {event.instructor && <div style={{ fontSize: 12, color: C.muted }}>Instructor: {event.instructor}</div>}
                   {event.description && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>{event.description.slice(0, 80)}…</div>}
-                  {event.link && <a href={event.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.accent, marginTop: 4, display: 'block' }}>🔗 Join Link</a>}
+                  {event.link && <a href={event.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.accent, marginTop: 4, display: 'block' }}>Join Link →</a>}
                 </div>
                 <Btn onClick={() => deleteEvent(event.id)} variant="danger" style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0 }}>Delete</Btn>
               </div>
@@ -304,8 +313,8 @@ function MediaLibrary() {
   const handleUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) { setMsg('❌ Images only'); return }
-    if (file.size > 5 * 1024 * 1024) { setMsg('❌ Max 5MB'); return }
+    if (!file.type.startsWith('image/')) { setMsg('err: Images only'); return }
+    if (file.size > 5 * 1024 * 1024) { setMsg('err: Max 5MB'); return }
 
     setUploading(true); setMsg('')
     try {
@@ -321,8 +330,8 @@ function MediaLibrary() {
       const updated = [newImg, ...images]
       setImages(updated)
       localStorage.setItem('bitsavers_media', JSON.stringify(updated))
-      setMsg('✅ Image uploaded!')
-    } catch (err) { setMsg('❌ ' + (err.message || 'Upload failed')) }
+      setMsg('ok: Image uploaded!')
+    } catch (err) { setMsg('err: ' + (err.message || 'Upload failed')) }
     setUploading(false)
     e.target.value = ''
   }
@@ -352,7 +361,7 @@ function MediaLibrary() {
           cursor: uploading ? 'not-allowed' : 'pointer', color: C.muted,
           fontSize: 14, background: C.dim, transition: 'border-color 0.2s',
         }}>
-          {uploading ? '⏳ Uploading…' : '📁 Tap to select image (max 5MB)'}
+          {uploading ? <><Loader size={15} style={{animation:'spin 1s linear infinite'}}/> Uploading…</> : <><Upload size={15}/> Tap to select image (max 5MB)</>}
           <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} style={{ display: 'none' }} />
         </label>
       </Card>
@@ -368,10 +377,10 @@ function MediaLibrary() {
                   <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{img.name}</div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={() => copyUrl(img.url, img.id)} style={{ flex: 1, background: C.dim, border: 'none', color: C.accent, padding: '5px 0', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                      {copied === img.id ? '✅' : '📋 Copy'}
+                      {copied === img.id ? <><span style={{color:C.green}}>Copied</span></> : <><Copy size={11}/> Copy</>}
                     </button>
                     <button onClick={() => deleteImage(img.id)} style={{ background: 'rgba(239,68,68,0.1)', border: 'none', color: C.red, padding: '5px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>
-                      🗑️
+                      <Trash2 size={12}/>
                     </button>
                   </div>
                 </div>
@@ -385,6 +394,7 @@ function MediaLibrary() {
 }
 
 // ─── Main Admin Panel ─────────────────────────────────────────────────────────
+// spin keyframe injected via style tag in render
 export default function AdminPanel({ user }) {
   const [section, setSection] = useState('admins')
 
@@ -392,7 +402,7 @@ export default function AdminPanel({ user }) {
   if (!user?.npub || !isAdmin(user.npub)) {
     return (
       <div style={{ textAlign: 'center', paddingTop: 80 }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🚫</div>
+        <div style={{ marginBottom: 16, display:'flex', justifyContent:'center' }}><AlertCircle size={48} color={C.red} /></div>
         <div style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 8 }}>Access Denied</div>
         <div style={{ fontSize: 14, color: C.muted }}>You don't have admin privileges.</div>
       </div>
@@ -404,7 +414,7 @@ export default function AdminPanel({ user }) {
       {/* Header */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
-          {isSuperAdmin(user.npub) ? '👑' : '🛡️'}
+          {isSuperAdmin(user.npub) ? <Crown size={20} color='#080808' /> : <Shield size={20} color='#080808' />}
         </div>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>Admin Panel</div>
@@ -416,24 +426,30 @@ export default function AdminPanel({ user }) {
 
       {/* Section tabs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 20 }}>
-        {SECTIONS.map(s => (
-          <button key={s.id} onClick={() => setSection(s.id)} style={{
-            background: section === s.id ? C.accent : C.card,
-            border: `1px solid ${section === s.id ? C.accent : C.border}`,
-            color: section === s.id ? C.bg : C.muted,
-            padding: '10px 6px', borderRadius: 10, fontWeight: 700,
-            fontSize: 11, cursor: 'pointer', textAlign: 'center', lineHeight: 1.4,
-          }}>
-            {s.label}
-          </button>
-        ))}
+        {SECTIONS.map(s => {
+          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <Image size={14}/>, assignments: <ClipboardList size={14}/> }
+          return (
+            <button key={s.id} onClick={() => setSection(s.id)} style={{
+              background: section === s.id ? C.accent : C.card,
+              border: `1px solid ${section === s.id ? C.accent : C.border}`,
+              color: section === s.id ? C.bg : C.muted,
+              padding: '10px 6px', borderRadius: 10, fontWeight: 700,
+              fontSize: 11, cursor: 'pointer', textAlign: 'center', lineHeight: 1.4,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+            }}>
+              {icons[s.id]}
+              {s.label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Section content */}
       {section === 'admins' && <ManageAdmins user={user} />}
       {section === 'news'   && <PublishNews user={user} />}
       {section === 'events' && <ManageEvents user={user} />}
-      {section === 'media'  && <MediaLibrary />}
+      {section === 'media'       && <MediaLibrary />}
+      {section === 'assignments' && <AdminAssignments />}
     </div>
   )
 }

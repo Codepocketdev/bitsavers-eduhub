@@ -11,3 +11,6 @@ Thumbs.db
 .idea/
 .vercel
 .env*.local
+
+# Don't track anything outside this directory
+../*

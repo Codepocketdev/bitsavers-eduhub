@@ -1,15 +1,17 @@
 // ─── Admin Config ─────────────────────────────────────────────────────────────
-// To add an admin: add their npub to the array below
-// To remove an admin: delete their npub from the array
-// The first npub is the super admin (cannot be removed from the panel)
-
+// Hardcoded super admins — these always have access regardless of localStorage
 export const ADMIN_NPUBS = [
   'npub10w6ssxk09tz8use8nvw9ujfsl2katfzu6e5lnrdyrxq90xts5qtqj3kz4q', // Super Admin
 ]
 
+// Checks BOTH hardcoded list AND localStorage-added admins
 export const isAdmin = (npub) => {
   if (!npub) return false
-  return ADMIN_NPUBS.includes(npub)
+  if (ADMIN_NPUBS.includes(npub)) return true
+  try {
+    const stored = JSON.parse(localStorage.getItem('bitsavers_admins') || '[]')
+    return stored.includes(npub)
+  } catch { return false }
 }
 
 export const isSuperAdmin = (npub) => {

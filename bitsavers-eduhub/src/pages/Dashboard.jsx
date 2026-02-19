@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { Menu, X, BookOpen, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield } from 'lucide-react'
+import { Menu, X, BookOpen, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy } from 'lucide-react'
 import { SimplePool } from 'nostr-tools/pool'
 import { publishProfile, fetchProfile } from '../lib/nostr'
 import ImageUpload from '../components/ImageUpload'
 import { isAdmin, isSuperAdmin } from '../config/admins'
 import AdminPanel from './AdminPanel'
+import DonatePage from './DonatePage'
+import NewsPage from './NewsPage'
+import CohortsPage from './CohortsPage'
+import AssessmentsPage from './AssessmentsPage'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 
@@ -373,7 +377,7 @@ function NostrFeed({ user }) {
       {/* Empty */}
       {!loading && posts.length === 0 && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>⚡</div>
+          <Zap size={40} color={C.accent} style={{ marginBottom: 12 }} />
           <div style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 6 }}>No posts yet</div>
           <div style={{ fontSize: 13, color: C.muted }}>Be the first — tap + to post with #bitsavers!</div>
         </div>
@@ -443,10 +447,10 @@ function ProfilePage({ user }) {
       await publishProfile(storedNsec, profileData)
       const stored = JSON.parse(localStorage.getItem('bitsavers_user') || '{}')
       localStorage.setItem('bitsavers_user', JSON.stringify({ ...stored, profile: profileData }))
-      setMsg('✅ Profile saved!')
+      setMsg('ok: Profile saved!')
       setEditing(false)
       setTimeout(() => window.location.reload(), 900)
-    } catch (e) { setMsg('❌ ' + (e.message || 'Failed')) }
+    } catch (e) { setMsg('err: ' + (e.message || 'Failed')) }
     setSaving(false)
   }
 
@@ -461,8 +465,8 @@ function ProfilePage({ user }) {
       setBio(fresh.about || '')
       setPicture(fresh.picture || '')
       setWebsite(fresh.website || '')
-      setMsg('✅ Refreshed from relays!')
-    } catch { setMsg('❌ Could not fetch from relays') }
+      setMsg('ok: Refreshed from relays!')
+    } catch { setMsg('err: Could not fetch from relays') }
     setRefreshing(false)
   }
 
@@ -482,15 +486,15 @@ function ProfilePage({ user }) {
         <div style={{ fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 4 }}>{displayName}</div>
         {profile.about && <div style={{ fontSize: 13, color: C.muted, marginBottom: 10, lineHeight: 1.5 }}>{profile.about}</div>}
         {profile.website && <a href={profile.website} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.accent }}>{profile.website}</a>}
-        {profile.nip05 && <div style={{ fontSize: 12, color: C.accent, marginTop: 6 }}>✅ {profile.nip05}</div>}
+        {profile.nip05 && <div style={{ fontSize: 12, color: C.accent, marginTop: 6, display:'flex', alignItems:'center', gap:4 }}><CheckCircle size={12}/> {profile.nip05}</div>}
         <div style={{ fontSize: 11, color: C.accent, fontFamily: 'monospace', marginTop: 12 }}>{shortNpub}</div>
         <div style={{ background: C.dim, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 10, color: C.muted, fontFamily: 'monospace', wordBreak: 'break-all', marginTop: 10 }}>{npub || 'Not available'}</div>
       </div>
 
-      {/* 🔑 Keys backup card */}
+      {/* Keys backup card */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-          🔑 Your Nostr Keys
+          Your Nostr Keys
           <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>— back these up!</span>
         </div>
 
@@ -501,42 +505,42 @@ function ProfilePage({ user }) {
             {npub || 'Not available'}
           </div>
           <button onClick={() => copyText(npub, 'npub')} style={{ background: 'transparent', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-            {npubCopied ? '✅ Copied!' : '📋 Copy npub'}
+            {npubCopied ? <><CheckCircle size={12}/> Copied!</> : <><Copy size={12}/> Copy npub</>}
           </button>
         </div>
 
         {/* Private key */}
         <div>
-          <div style={{ fontSize: 11, color: C.red, fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>PRIVATE KEY — NEVER share with anyone!</div>
+          <div style={{ fontSize: 11, color: C.red, display:'flex', alignItems:'flex-start', gap:6, fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>PRIVATE KEY — NEVER share with anyone!</div>
           <div style={{ position: 'relative', marginBottom: 6 }}>
             <div style={{ background: 'rgba(26,5,5,0.8)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 9, padding: '10px 44px 10px 12px', fontSize: 10, fontFamily: 'monospace', color: '#f87171', wordBreak: 'break-all', lineHeight: 1.6, minHeight: 42, display: 'flex', alignItems: 'center' }}>
               {showNsec ? (storedNsec || 'Not found — log out and log in again') : '••••••••••••••••••••••••••••••••••••••••••••••••'}
             </div>
             <button onClick={() => setShowNsec(!showNsec)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 18, padding: 4 }}>
-              {showNsec ? '🙈' : '👁️'}
+              {showNsec ? <EyeOff size={14}/> : <Eye size={14}/>}
             </button>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => copyText(storedNsec, 'nsec')} disabled={!storedNsec} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: storedNsec ? 1 : 0.4 }}>
-              {nsecCopied ? '✅ Copied!' : '📋 Copy nsec'}
+              {nsecCopied ? <><CheckCircle size={12}/> Copied!</> : <><Copy size={12}/> Copy nsec</>}
             </button>
           </div>
           <div style={{ marginTop: 10, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '8px 12px', fontSize: 11, color: '#f87171', lineHeight: 1.5 }}>
-            ⚠️ Save your nsec in a password manager. If you lose it you lose your account forever — there is no recovery.
+            Save your nsec in a password manager. If you lose it you lose your account forever — there is no recovery.
           </div>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
         <button onClick={() => setEditing(!editing)} style={{ flex: 1, background: editing ? C.dim : C.accent, border: editing ? `1px solid ${C.accent}` : 'none', color: editing ? C.accent : C.bg, padding: 11, borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-          {editing ? 'Cancel' : '✏️ Edit Profile'}
+          {editing ? 'Cancel' : <><Edit2 size={13}/> Edit Profile</>}
         </button>
         <button onClick={refreshProfile} disabled={refreshing} style={{ flex: 1, background: 'transparent', border: `1px solid ${C.border}`, color: C.accent, padding: 11, borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: refreshing ? 0.5 : 1 }}>
-          {refreshing ? '⏳ Fetching…' : '🔄 Refresh'}
+          {refreshing ? <><Loader size={13} style={{animation:'spin 1s linear infinite'}}/> Fetching…</> : <><RefreshCw size={13}/> Refresh</>}
         </button>
       </div>
 
       {msg && (
-        <div style={{ padding: 12, background: msg.startsWith('✅') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${msg.startsWith('✅') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 10, color: msg.startsWith('✅') ? C.green : C.red, fontSize: 13, marginBottom: 14, textAlign: 'center' }}>
+        <div style={{ padding: 12, background: msg.startsWith('ok') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${msg.startsWith('ok') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 10, color: msg.startsWith('ok') ? C.green : C.red, fontSize: 13, marginBottom: 14, textAlign: 'center' }}>
           {msg}
         </div>
       )}
@@ -563,7 +567,7 @@ function ProfilePage({ user }) {
               style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 13px', color: C.text, fontSize: 14, outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} />
           </div>
           <button onClick={save} disabled={saving} style={{ width: '100%', background: C.accent, border: 'none', color: C.bg, padding: 14, borderRadius: 10, fontWeight: 800, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Publishing to Nostr…' : '🚀 Save & Publish'}
+            {saving ? <><Loader size={13} style={{animation:'spin 1s linear infinite'}}/> Publishing…</> : <><Send size={13}/> Save & Publish</>}
           </button>
         </div>
       )}
@@ -584,9 +588,11 @@ const Placeholder = ({ emoji, title, sub }) => (
 // ─── Nav config ───────────────────────────────────────────────────────────────
 const NAV = [
   { id: 'feed',      icon: <Zap size={18} />,       label: 'Live Feed' },
+  { id: 'news',      icon: <Newspaper size={18} />,  label: 'News & Events' },
+  { id: 'cohorts',   icon: <Users size={18} />,      label: 'Cohorts' },
+  { id: 'assessments', icon: <BookOpen size={18} />,  label: 'Assessments' },
   { id: 'courses',   icon: <BookOpen size={18} />,   label: 'Courses' },
-  { id: 'community', icon: <Users size={18} />,      label: 'Community' },
-  { id: 'news',      icon: <Newspaper size={18} />,  label: 'News' },
+  { id: 'donate',    icon: <Zap size={18} />,        label: 'Donate' },
   { id: 'profile',   icon: <User size={18} />,       label: 'My Profile' },
   { id: 'admin',     icon: <Shield size={18} />,     label: 'Admin Panel', adminOnly: true },
 ]
@@ -710,9 +716,11 @@ export default function Dashboard() {
           </h1>
         </div>
         {page === 'feed'      && <NostrFeed user={user} />}
-        {page === 'courses'   && <Placeholder emoji="📚" title="Courses" sub="Bitcoin courses coming soon!" />}
-        {page === 'community' && <Placeholder emoji="🌍" title="Community" sub="Campus groups launching next!" />}
-        {page === 'news'      && <Placeholder emoji="📰" title="News" sub="Bitcoin news feed coming soon!" />}
+        {page === 'news'      && <NewsPage />}
+        {page === 'cohorts'   && <CohortsPage user={user} />}
+        {page === 'assessments' && <AssessmentsPage user={user} />}
+        {page === 'courses'   && <Placeholder title="Courses" sub="Bitcoin courses coming soon!" />}
+        {page === 'donate'    && <DonatePage />}
         {page === 'profile'   && <ProfilePage user={user} />}
         {page === 'admin'     && <AdminPanel user={user} />}
       </main>
