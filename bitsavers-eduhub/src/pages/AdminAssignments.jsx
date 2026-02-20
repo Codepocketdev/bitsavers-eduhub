@@ -6,6 +6,28 @@ import { finalizeEvent } from 'nostr-tools/pure'
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 const ASSESSMENT_TAG = 'bitsavers-assessment'
 
+// Publish assessment deletion tombstone to Nostr
+const publishAssessmentDelete = async (assessmentId, assessmentTitle) => {
+  const storedNsec = localStorage.getItem('bitsavers_nsec')
+  if (!storedNsec) return
+  try {
+    const skBytes = nsecToBytes(storedNsec)
+    const pool = getPool()
+    // kind:1 delete note — same tag as create so single subscription catches both
+    const event = finalizeEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['t', 'bitsavers'],
+        ['t', ASSESSMENT_TAG],
+      ],
+      content: 'ASSESSMENT_DELETE:' + JSON.stringify({ id: assessmentId, title: assessmentTitle }),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS, event))
+    console.log('✓ Assessment deletion published to Nostr:', assessmentTitle)
+  } catch(e) { console.error('Failed to publish deletion:', e) }
+}
+
 const C = {
   bg: '#080808', surface: '#0f0f0f', card: '#141414',
   border: 'rgba(247,147,26,0.18)', accent: '#F7931A',
@@ -25,18 +47,20 @@ const publishAssessmentToNostr = async (assessment) => {
   try {
     const skBytes = nsecToBytes(storedNsec)
     const pool = getPool()
+    // kind:1 — appears in bitsavers feed AND filterable by tag
+    // Same pattern as cohort join/leave: single tag, single subscription catches everything
     const event = finalizeEvent({
-      kind: 30078,
+      kind: 1,
       created_at: Math.floor(Date.now() / 1000),
       tags: [
-        ['d', assessment.id],
+        ['t', 'bitsavers'],
         ['t', ASSESSMENT_TAG],
-        ['cohort', assessment.cohortId],
+        ['subject', assessment.title],
       ],
-      content: JSON.stringify(assessment),
+      content: 'ASSESSMENT_CREATE:' + JSON.stringify(assessment),
     }, skBytes)
     await Promise.any(pool.publish(RELAYS, event))
-    console.log('Assessment published to Nostr:', assessment.title)
+    console.log('✓ Assessment published to Nostr:', assessment.title)
   } catch(e) { console.error('Failed to publish assessment:', e) }
 }
 
@@ -144,55 +168,6 @@ function QuestionBuilder({ questions, onChange }) {
   )
 }
 
-// ─── Results viewer ───────────────────────────────────────────────────────────
-function ResultsViewer({ assessment }) {
-  const results = getResults().filter(r => r.assessmentId === assessment.id)
-  const cohort = getCohorts().find(c => c.id === assessment.cohortId)
-  const students = cohort?.students || []
-  const submitted = students.filter(s => results.find(r => r.npub === s.npub))
-  const pending = students.filter(s => !results.find(r => r.npub === s.npub))
-
-  return (
-    <div style={{ marginTop: 16, borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 9, padding: '10px 16px', flex: 1, textAlign: 'center' }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: C.green }}>{submitted.length}</div>
-          <div style={{ fontSize: 11, color: C.green }}>Submitted</div>
-        </div>
-        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 9, padding: '10px 16px', flex: 1, textAlign: 'center' }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: C.red }}>{pending.length}</div>
-          <div style={{ fontSize: 11, color: C.red }}>Pending</div>
-        </div>
-      </div>
-
-      {results.map(r => (
-        <div key={r.id} style={{ background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: r.score ? 8 : 0 }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{r.name}</div>
-              <div style={{ fontSize: 10, color: C.muted, fontFamily: 'monospace' }}>{r.npub?.slice(0,20)}…</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              {r.score && <div style={{ fontSize: 16, fontWeight: 900, color: C.accent }}>{r.score}</div>}
-              <div style={{ fontSize: 10, color: C.muted }}>{new Date(r.submittedAt).toLocaleDateString()}</div>
-              {r.autoSubmitted && <div style={{ fontSize: 10, color: C.red }}>Auto-submitted</div>}
-            </div>
-          </div>
-          {/* Show open-ended answers */}
-          {assessment.questions?.filter(q => q.type === 'open').map(q => r.answers[q.id] && (
-            <div key={q.id} style={{ marginTop: 8, background: C.dim, borderRadius: 7, padding: '8px 10px' }}>
-              <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>{q.text}</div>
-              <div style={{ fontSize: 12, color: C.text }}>{r.answers[q.id]}</div>
-            </div>
-          ))}
-        </div>
-      ))}
-
-      {results.length === 0 && <div style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '20px 0' }}>No submissions yet.</div>}
-    </div>
-  )
-}
-
 // ─── Main Admin Assignments ───────────────────────────────────────────────────
 export default function AdminAssignments() {
   const cohorts = getCohorts()
@@ -202,7 +177,6 @@ export default function AdminAssignments() {
   const [form, setForm] = useState({ title: '', description: '', cohortId: '', timer: '' })
   const [questions, setQuestions] = useState([])
   const [msg, setMsg] = useState('')
-  const [viewResults, setViewResults] = useState(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -232,10 +206,19 @@ export default function AdminAssignments() {
     setTimeout(() => setMsg(''), 3000)
   }
 
-  const deleteAssessment = (id) => {
-    const updated = assessments.filter(a => a.id !== id)
+  const deleteAssessment = async (id) => {
+    const found = assessments.find(x => x.id === id)
+    const updated = assessments.filter(x => x.id !== id)
     saveAssessments(updated)
     setAssessmentsState(updated)
+    if (expanded === id) setExpanded(null)
+    const deleted = (() => { try { return JSON.parse(localStorage.getItem('bitsavers_deleted_assessments') || '[]') } catch { return [] } })()
+    if (!deleted.includes(id)) {
+      localStorage.setItem('bitsavers_deleted_assessments', JSON.stringify([...deleted, id]))
+    }
+    await publishAssessmentDelete(id, found?.title || '')
+    setMsg('ok: Deleted everywhere via Nostr')
+    setTimeout(() => setMsg(''), 3000)
   }
 
   return (
@@ -313,8 +296,11 @@ export default function AdminAssignments() {
 
             {isOpen && (
               <div style={{ borderTop: `1px solid ${C.border}`, padding: 18 }}>
-                <ResultsViewer assessment={a} />
-                <button onClick={() => deleteAssessment(a.id)} style={{ marginTop: 14, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: C.red, padding: '8px 16px', borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                {a.description && <div style={{ fontSize: 13, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>{a.description}</div>}
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+                  {(a.questions||[]).length} questions · {a.timer ? a.timer + ' min timer' : 'No timer'} · View submissions in the Submissions tab
+                </div>
+                <button onClick={() => deleteAssessment(a.id)} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: C.red, padding: '8px 16px', borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
                   Delete Assessment
                 </button>
               </div>

@@ -284,6 +284,18 @@ function NostrFeed({ user }) {
       onevent(event) {
         if (cache.seenIds.has(event.id)) return
         if (!event.content?.trim()) return
+        // Filter out internal app protocol notes — never show in feed
+        const c = event.content
+        if (c.startsWith('ASSESSMENT_CREATE:') ||
+            c.startsWith('ASSESSMENT_DELETE:') ||
+            c.startsWith('EVENT_DELETE:') ||
+            c.startsWith('NEWS_DELETE:') ||
+            c.startsWith('SUBMISSION:') ||
+            c.startsWith('joined-') ||
+            c.startsWith('left-') ||
+            c.startsWith('DELETED:') ||
+            c.includes('DATA:{') ||
+            c.includes('DATA:{"')) return
         cache.seenIds.add(event.id)
 
         if (isInitial.current) {

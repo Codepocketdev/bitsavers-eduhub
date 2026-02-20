@@ -6,7 +6,8 @@ import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 import ImageUpload from '../components/ImageUpload'
 import AdminAssignments from './AdminAssignments'
-import { Users, Newspaper, Calendar, Image, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle } from 'lucide-react'
+import AdminSubmissions from './AdminSubmissions'
+import { Users, Newspaper, Calendar, Image, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle, Inbox } from 'lucide-react'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 
@@ -25,6 +26,7 @@ const SECTIONS = [
   { id: 'events',      label: 'Events',      },
   { id: 'media',       label: 'Media',       },
   { id: 'assignments', label: 'Assignments', },
+  { id: 'submissions', label: 'Submissions', },
 ]
 
 // ─── Shared components ────────────────────────────────────────────────────────
@@ -179,10 +181,15 @@ function PublishNews({ user }) {
     setPublishing(false)
   }
 
-  const deleteNews = (id) => {
+  const deleteNews = async (id) => {
     const updated = newsList.filter(n => n.id !== id)
     setNewsList(updated)
     localStorage.setItem('bitsavers_news', JSON.stringify(updated))
+    // Track deleted so it doesn't reappear
+    const deleted = JSON.parse(localStorage.getItem('bitsavers_deleted_news') || '[]')
+    if (!deleted.includes(id)) localStorage.setItem('bitsavers_deleted_news', JSON.stringify([...deleted, id]))
+    // Publish delete signal so all user devices purge it immediately
+    await publishNewsDelete(id)
   }
 
   return (
@@ -265,8 +272,37 @@ const publishEventToNostr = async (eventData) => {
 }
 
 const publishEventDelete = async (eventId) => {
-  // No-op for kind:1 — we rely on deleted list + not re-fetching
-  // Kind 5 deletion requests are often ignored by relays anyway
+  const storedNsec = localStorage.getItem('bitsavers_nsec')
+  if (!storedNsec) return
+  try {
+    const skBytes = nsecToBytes(storedNsec)
+    const pool = getPool()
+    const event = finalizeEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['t', 'bitsavers'], ['t', 'bitsavers-event']],
+      content: 'EVENT_DELETE:' + JSON.stringify({ id: eventId }),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS_EV, event))
+    console.log('✓ Event deletion published:', eventId)
+  } catch(e) { console.error('Failed to publish event delete:', e) }
+}
+
+const publishNewsDelete = async (newsId) => {
+  const storedNsec = localStorage.getItem('bitsavers_nsec')
+  if (!storedNsec) return
+  try {
+    const skBytes = nsecToBytes(storedNsec)
+    const pool = getPool()
+    const event = finalizeEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['t', 'bitsavers'], ['t', 'bitsavers-news']],
+      content: 'NEWS_DELETE:' + JSON.stringify({ id: newsId }),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS_EV, event))
+    console.log('✓ News deletion published:', newsId)
+  } catch(e) { console.error('Failed to publish news delete:', e) }
 }
 
 function ManageEvents({ user }) {
@@ -477,7 +513,7 @@ export default function AdminPanel({ user }) {
       {/* Section tabs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 20 }}>
         {SECTIONS.map(s => {
-          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <Image size={14}/>, assignments: <ClipboardList size={14}/> }
+          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <Image size={14}/>, assignments: <ClipboardList size={14}/>, submissions: <Inbox size={14}/> }
           return (
             <button key={s.id} onClick={() => setSection(s.id)} style={{
               background: section === s.id ? C.accent : C.card,
@@ -500,6 +536,7 @@ export default function AdminPanel({ user }) {
       {section === 'events' && <ManageEvents user={user} />}
       {section === 'media'       && <MediaLibrary />}
       {section === 'assignments' && <AdminAssignments />}
+      {section === 'submissions' && <AdminSubmissions />}
     </div>
   )
 }

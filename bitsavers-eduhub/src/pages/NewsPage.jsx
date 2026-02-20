@@ -28,16 +28,17 @@ export default function NewsPage() {
   const [tab, setTab] = useState('news')
 
   useEffect(() => {
-    // ── Load events: localStorage first (instant), then Nostr ──────────────
-    const deleted = JSON.parse(localStorage.getItem('bitsavers_deleted_events') || '[]')
-    const cutoff = Date.now() - 86400000 // yesterday onwards
+    const deletedEvents = () => { try { return JSON.parse(localStorage.getItem('bitsavers_deleted_events') || '[]') } catch { return [] } }
+    const deletedNews   = () => { try { return JSON.parse(localStorage.getItem('bitsavers_deleted_news')   || '[]') } catch { return [] } }
+    const cutoff = Date.now() - 86400000
 
+    // ── 1. Show localStorage instantly ──────────────────────────────────────
     try {
       const stored = JSON.parse(localStorage.getItem('bitsavers_events') || '[]')
-      setEvents(stored.filter(e => !deleted.includes(e.id) && new Date(e.date) >= new Date(cutoff)))
+      setEvents(stored.filter(e => !deletedEvents().includes(e.id) && new Date(e.date) >= new Date(cutoff)))
     } catch {}
 
-    // Fetch kind:1 events from Nostr — same as announcements but #t: bitsavers-event
+    // ── 2. Fetch events from Nostr (one-time) ───────────────────────────────
     const pool = getPool()
     const seenEvIds = new Set()
     const evSub = pool.subscribe(
@@ -48,51 +49,74 @@ export default function NewsPage() {
           if (seenEvIds.has(ev.id)) return
           seenEvIds.add(ev.id)
           try {
-            // Parse DATA: embedded JSON from content
+            // Handle EVENT_DELETE signal
+            if (ev.content.startsWith('EVENT_DELETE:')) {
+              const { id } = JSON.parse(ev.content.slice('EVENT_DELETE:'.length))
+              if (!id) return
+              const del = deletedEvents()
+              if (!del.includes(id)) localStorage.setItem('bitsavers_deleted_events', JSON.stringify([...del, id]))
+              const stored = JSON.parse(localStorage.getItem('bitsavers_events') || '[]')
+              localStorage.setItem('bitsavers_events', JSON.stringify(stored.filter(e => e.id !== id)))
+              setEvents(prev => prev.filter(e => e.id !== id))
+              return
+            }
+            // Handle normal event note
             const dataMatch = ev.content.match(/DATA:(\{.*\})/)
             if (!dataMatch) return
             const data = JSON.parse(dataMatch[1])
             if (!data.id || !data.title || !data.date) return
-            if (deleted.includes(data.id)) return
+            if (deletedEvents().includes(data.id)) return
             if (new Date(data.date) < new Date(cutoff)) return
-            // Save to localStorage for offline use
             const all = JSON.parse(localStorage.getItem('bitsavers_events') || '[]')
-            if (!all.find(e => e.id === data.id)) {
-              localStorage.setItem('bitsavers_events', JSON.stringify([data, ...all]))
-            }
-            setEvents(prev =>
-              prev.find(e => e.id === data.id) ? prev
-              : [...prev, data].sort((a,b) => new Date(a.date) - new Date(b.date))
-            )
+            if (!all.find(e => e.id === data.id)) localStorage.setItem('bitsavers_events', JSON.stringify([data, ...all]))
+            setEvents(prev => prev.find(e => e.id === data.id) ? prev : [...prev, data].sort((a,b) => new Date(a.date) - new Date(b.date)))
           } catch {}
         },
-        oneose() { evSub.close() }
+        oneose() {} // keep open for live deletes
       }
     )
 
-    // ── Fetch news posts from Nostr ─────────────────────────────────────────
+    // ── 3. Fetch news from Nostr (one-time batch) ───────────────────────────
     const pool2 = getPool()
     const seen = new Set()
     const batch = []
 
-    const sub = pool2.subscribe(
+    const newsSub = pool2.subscribe(
       RELAYS,
-      { kinds: [1], '#t': ['bitsavers-news'], since: Math.floor(Date.now()/1000) - 30*86400, limit: 30 },
+      { kinds: [1], '#t': ['bitsavers-news'], since: Math.floor(Date.now()/1000) - 30*86400, limit: 50 },
       {
         onevent(e) {
           if (seen.has(e.id) || !e.content?.trim()) return
           seen.add(e.id)
+          // Handle NEWS_DELETE signal
+          if (e.content.startsWith('NEWS_DELETE:')) {
+            try {
+              const { id } = JSON.parse(e.content.slice('NEWS_DELETE:'.length))
+              if (!id) return
+              const del = deletedNews()
+              if (!del.includes(id)) localStorage.setItem('bitsavers_deleted_news', JSON.stringify([...del, id]))
+              localStorage.setItem('bitsavers_news', JSON.stringify(
+                JSON.parse(localStorage.getItem('bitsavers_news') || '[]').filter(n => n.id !== id)
+              ))
+              setNews(prev => prev.filter(n => n.id !== id))
+            } catch {}
+            return
+          }
+          // Skip internal protocol notes
+          if (e.content.includes('DATA:{') || e.content.startsWith('DELETED:')) return
+          // Skip if this news ID was deleted
+          if (deletedNews().includes(e.id)) return
           batch.push(e)
         },
         oneose() {
           setNews(batch.sort((a,b) => b.created_at - a.created_at))
           setLoading(false)
-          sub.close()
         }
       }
     )
+
     setTimeout(() => setLoading(false), 8000)
-    return () => sub.close()
+    return () => { evSub.close(); newsSub.close() }
   }, [])
 
   const parseNewsContent = (content) => {

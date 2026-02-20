@@ -2,33 +2,92 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { isAdmin } from '../config/admins'
 import { Clock, CheckCircle, XCircle, ChevronRight, AlertCircle, ClipboardList, BookOpen, Award, Loader } from 'lucide-react'
-import { getPool } from '../lib/nostr'
+import { getPool, nsecToBytes } from '../lib/nostr'
+import { finalizeEvent } from 'nostr-tools/pure'
+import { nip04 } from 'nostr-tools'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 const ASSESSMENT_TAG = 'bitsavers-assessment'
+const SUBMISSION_TAG = (assessmentId) => `bitsavers-sub-${assessmentId}`
 
-// Fetch assessments from Nostr for a list of cohort IDs
+// Publish submission to Nostr so admin sees it from any device
+const publishSubmissionToNostr = async (result) => {
+  const storedNsec = localStorage.getItem('bitsavers_nsec')
+  if (!storedNsec) return
+  try {
+    const skBytes = nsecToBytes(storedNsec)
+    const pool = getPool()
+    const event = finalizeEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['t', SUBMISSION_TAG(result.assessmentId)],
+        ['t', 'bitsavers-submission'],
+        ['subject', result.assessmentTitle],
+      ],
+      content: 'SUBMISSION:' + JSON.stringify(result),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS, event))
+    console.log('✓ Submission published to Nostr')
+  } catch(e) { console.error('Failed to publish submission:', e) }
+}
+
+// Fetch assessments from Nostr + check for deletion tombstones
+// Single subscription handles both CREATE and DELETE events — same pattern as cohort join/leave
+// ASSESSMENT_CREATE:{json} → add to list
+// ASSESSMENT_DELETE:{id}   → mark as deleted
+// Latest event per assessment ID wins — no race condition possible
 const fetchAssessmentsFromNostr = (cohortIds) => new Promise((resolve) => {
   if (!cohortIds.length) { resolve([]); return }
   const pool = getPool()
-  const found = []
   const seen = new Set()
+  // Track latest event per assessment ID with its action + data
+  const byId = {} // id → { action: 'create'|'delete', data, created_at }
+  const localDeleted = JSON.parse(localStorage.getItem('bitsavers_deleted_assessments') || '[]')
+
   const sub = pool.subscribe(
     RELAYS,
-    { kinds: [30078], '#t': [ASSESSMENT_TAG], limit: 100 },
+    { kinds: [1], '#t': [ASSESSMENT_TAG], limit: 500 },
     {
       onevent(e) {
         if (seen.has(e.id)) return
         seen.add(e.id)
         try {
-          const data = JSON.parse(e.content)
-          if (data.id && data.title && cohortIds.includes(data.cohortId)) found.push(data)
+          if (e.content.startsWith('ASSESSMENT_CREATE:')) {
+            const data = JSON.parse(e.content.slice('ASSESSMENT_CREATE:'.length))
+            if (!data.id || !data.title || !cohortIds.includes(data.cohortId)) return
+            // Keep latest event per ID
+            if (!byId[data.id] || e.created_at > byId[data.id].created_at) {
+              byId[data.id] = { action: 'create', data, created_at: e.created_at }
+            }
+          } else if (e.content.startsWith('ASSESSMENT_DELETE:')) {
+            const data = JSON.parse(e.content.slice('ASSESSMENT_DELETE:'.length))
+            if (!data.id) return
+            if (!byId[data.id] || e.created_at > byId[data.id].created_at) {
+              byId[data.id] = { action: 'delete', data, created_at: e.created_at }
+            }
+          }
         } catch {}
       },
-      oneose() { sub.close(); resolve(found) }
+      oneose() {
+        sub.close()
+        const result = []
+        Object.values(byId).forEach(entry => {
+          if (entry.action === 'delete') {
+            // Persist to local deleted list so it stays gone offline
+            if (!localDeleted.includes(entry.data.id)) {
+              localDeleted.push(entry.data.id)
+              localStorage.setItem('bitsavers_deleted_assessments', JSON.stringify(localDeleted))
+            }
+          } else if (!localDeleted.includes(entry.data.id)) {
+            result.push(entry.data)
+          }
+        })
+        resolve(result)
+      }
     }
   )
-  setTimeout(() => { sub.close(); resolve(found) }, 6000)
+  setTimeout(() => { sub.close(); resolve([]) }, 8000)
 })
 
 const C = {
@@ -96,8 +155,8 @@ function QuizRunner({ assessment, user, onDone }) {
     setAnswers(prev => ({ ...prev, [qId]: answer }))
   }
 
-  const submit = (auto = false) => {
-    // Calculate score for MCQ questions
+  const submit = async (auto = false) => {
+    if (submitted) return
     let correct = 0
     let mcqTotal = 0
     questions.forEach(q => {
@@ -111,10 +170,13 @@ function QuizRunner({ assessment, user, onDone }) {
       id: Date.now().toString(),
       assessmentId: assessment.id,
       assessmentTitle: assessment.title,
+      cohortId: assessment.cohortId,
       npub: user.npub,
-      name: user.profile?.name || 'Anonymous',
+      name: user.profile?.name || user.profile?.display_name || 'Anonymous',
+      picture: user.profile?.picture || null,
       answers,
-      score: mcqTotal > 0 ? `${correct}/${mcqTotal}` : null,
+      questions: assessment.questions, // include questions so admin can read open-ended answers
+      score: mcqTotal > 0 ? correct + '/' + mcqTotal : null,
       correct,
       mcqTotal,
       submittedAt: Date.now(),
@@ -122,12 +184,14 @@ function QuizRunner({ assessment, user, onDone }) {
     }
 
     const results = getResults()
-    // Remove previous attempt for same assessment + user
     const filtered = results.filter(r => !(r.assessmentId === assessment.id && r.npub === user.npub))
     saveResults([...filtered, result])
     setScore({ correct, mcqTotal })
     setSubmitted(true)
     if (auto) setExpired(true)
+
+    // Publish to Nostr so admin sees it from any device
+    publishSubmissionToNostr(result)
   }
 
   // Results screen
@@ -279,35 +343,69 @@ function StudentAssessments({ user }) {
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      // Start with local assessments
-      const local = getAssessments().filter(a => myCohortIds.includes(a.cohortId))
+
+      // 1. Show localStorage immediately — no flash
+      const deleted = () => { try { return JSON.parse(localStorage.getItem('bitsavers_deleted_assessments') || '[]') } catch { return [] } }
+      const local = getAssessments().filter(a => myCohortIds.includes(a.cohortId) && !deleted().includes(a.id))
       if (local.length) setAssessments(local)
 
+      // 2. One-time Nostr fetch for full history
       if (myCohortIds.length > 0) {
-        // Always fetch from Nostr to get latest
         try {
           const nostr = await fetchAssessmentsFromNostr(myCohortIds)
-          if (nostr.length > 0) {
-            // Merge: nostr takes priority, deduplicate by id
-            const merged = [...local]
-            nostr.forEach(na => {
-              const idx = merged.findIndex(a => a.id === na.id)
-              if (idx >= 0) merged[idx] = na
-              else merged.push(na)
-            })
-            // Save merged back to localStorage
-            const all = getAssessments()
-            merged.forEach(ma => {
-              if (!all.find(a => a.id === ma.id)) all.push(ma)
-            })
-            saveAssessments(all)
-            setAssessments(merged)
-          }
+          const del = deleted()
+          const merged = [...local]
+          nostr.forEach(na => {
+            if (del.includes(na.id)) return
+            const idx = merged.findIndex(a => a.id === na.id)
+            if (idx >= 0) merged[idx] = na
+            else merged.push(na)
+          })
+          const all = getAssessments().filter(a => !del.includes(a.id))
+          merged.forEach(ma => { if (!all.find(a => a.id === ma.id)) all.push(ma) })
+          saveAssessments(all)
+          setAssessments(merged)
         } catch(e) { console.error('Nostr fetch failed:', e) }
       }
       setLoading(false)
     }
     load()
+  }, [myCohortIds.join(',')])
+
+  // 3. Live subscription — immediately purge deleted assessments the moment the note arrives
+  //    This fires even if student already has the page open — no refresh needed
+  useEffect(() => {
+    if (!myCohortIds.length) return
+    const pool = getPool()
+    const seen = new Set()
+
+    const sub = pool.subscribe(
+      RELAYS,
+      { kinds: [1], '#t': [ASSESSMENT_TAG], limit: 100 },
+      {
+        onevent(e) {
+          if (seen.has(e.id)) return
+          seen.add(e.id)
+          if (!e.content.startsWith('ASSESSMENT_DELETE:')) return
+          try {
+            const { id } = JSON.parse(e.content.slice('ASSESSMENT_DELETE:'.length))
+            if (!id) return
+            // 1. Add to deleted list in localStorage
+            const del = (() => { try { return JSON.parse(localStorage.getItem('bitsavers_deleted_assessments') || '[]') } catch { return [] } })()
+            if (!del.includes(id)) localStorage.setItem('bitsavers_deleted_assessments', JSON.stringify([...del, id]))
+            // 2. Remove from stored assessments in localStorage
+            const stored = getAssessments().filter(a => a.id !== id)
+            saveAssessments(stored)
+            // 3. Remove from UI immediately — no refresh needed
+            setAssessments(prev => prev.filter(a => a.id !== id))
+            console.log('✓ Assessment deleted from UI:', id)
+          } catch {}
+        },
+        oneose() {} // keep subscription open for live updates
+      }
+    )
+
+    return () => sub.close()
   }, [myCohortIds.join(',')])
 
 
