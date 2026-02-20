@@ -7,7 +7,9 @@ import { nip19 } from 'nostr-tools'
 import ImageUpload from '../components/ImageUpload'
 import AdminAssignments from './AdminAssignments'
 import AdminSubmissions from './AdminSubmissions'
-import { Users, Newspaper, Calendar, Image, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle, Inbox } from 'lucide-react'
+import AdminPoW from './AdminPoW'
+import AdminSocials from './AdminSocials'
+import { Users, Newspaper, Calendar, Image, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle, Inbox, Hammer, Share2 } from 'lucide-react'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 
@@ -27,6 +29,8 @@ const SECTIONS = [
   { id: 'media',       label: 'Media',       },
   { id: 'assignments', label: 'Assignments', },
   { id: 'submissions', label: 'Submissions', },
+  { id: 'pow',         label: 'PoW Stats',   },
+  { id: 'socials',     label: 'Socials',     },
 ]
 
 // ─── Shared components ────────────────────────────────────────────────────────
@@ -513,7 +517,7 @@ export default function AdminPanel({ user }) {
       {/* Section tabs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 20 }}>
         {SECTIONS.map(s => {
-          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <Image size={14}/>, assignments: <ClipboardList size={14}/>, submissions: <Inbox size={14}/> }
+          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <Image size={14}/>, assignments: <ClipboardList size={14}/>, submissions: <Inbox size={14}/>, pow: <Hammer size={14}/>, socials: <Share2 size={14}/> }
           return (
             <button key={s.id} onClick={() => setSection(s.id)} style={{
               background: section === s.id ? C.accent : C.card,
@@ -537,6 +541,8 @@ export default function AdminPanel({ user }) {
       {section === 'media'       && <MediaLibrary />}
       {section === 'assignments' && <AdminAssignments />}
       {section === 'submissions' && <AdminSubmissions />}
+      {section === 'pow'         && <AdminPoW />}
+      {section === 'socials'     && <AdminSocials />}
     </div>
   )
 }

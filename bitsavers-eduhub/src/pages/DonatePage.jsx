@@ -1,5 +1,19 @@
-import { useState } from 'react'
-import { Zap, Copy, CheckCircle, X } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { SimplePool } from 'nostr-tools/pool'
+import { Zap, Copy, CheckCircle, X, Twitter, Instagram, Facebook, Github, Linkedin, Mail, Globe } from 'lucide-react'
+
+const ICON_MAP = {
+  twitter: <Twitter size={16} />, instagram: <Instagram size={16} />,
+  facebook: <Facebook size={16} />, globe: <Globe size={16} />,
+  linkedin: <Linkedin size={16} />, github: <Github size={16} />,
+  mail: <Mail size={16} />, zap: <Zap size={16} />,
+}
+
+const getSocials = () => {
+  try {
+    return JSON.parse(localStorage.getItem('bitsavers_socials') || '[]').filter(s => s.url?.trim())
+  } catch { return [] }
+}
 
 const C = {
   bg: '#080808', surface: '#0f0f0f', card: '#141414',
@@ -122,6 +136,31 @@ export default function DonatePage() {
   const [invoice, setInvoice] = useState('')
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [socials, setSocials] = useState(getSocials)
+
+  useEffect(() => {
+    // Fetch latest socials from Nostr — updates localStorage for all future loads
+    const pool = new SimplePool()
+    const SRELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
+    let latest = { created_at: 0 }
+    const seen = new Set()
+    const sub = pool.subscribe(SRELAYS, { kinds: [1], '#t': ['bitsavers-socials'], limit: 10 }, {
+      onevent(e) {
+        if (seen.has(e.id) || !e.content.startsWith('SOCIALS:')) return
+        seen.add(e.id)
+        try { if (e.created_at > latest.created_at) latest = { created_at: e.created_at, data: JSON.parse(e.content.slice('SOCIALS:'.length)) } } catch {}
+      },
+      oneose() {
+        sub.close()
+        if (latest.data) {
+          localStorage.setItem('bitsavers_socials', JSON.stringify(latest.data))
+          setSocials(latest.data.filter(s => s.url?.trim()))
+        }
+      }
+    })
+    setTimeout(() => sub.close(), 8000)
+    return () => sub.close()
+  }, [])
 
   const fetchInvoice = async () => {
     setLoading(true)
@@ -227,6 +266,21 @@ export default function DonatePage() {
           amount={amount}
           onClose={() => { setShowModal(false); setInvoice('') }}
         />
+      )}
+
+      {/* Social links */}
+      {socials.length > 0 && (
+        <div style={{ maxWidth: 420, margin: '0 auto 24px', padding: '20px', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Follow Us</div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+            {socials.map(s => (
+              <a key={s.id} href={s.url} target="_blank" rel="noopener noreferrer" title={s.label}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: C.dim, border: `1px solid ${C.border}`, borderRadius: 20, color: C.accent, textDecoration: 'none', fontSize: 12, fontWeight: 600 }}>
+                {ICON_MAP[s.icon] || <Globe size={16} />} {s.label}
+              </a>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )

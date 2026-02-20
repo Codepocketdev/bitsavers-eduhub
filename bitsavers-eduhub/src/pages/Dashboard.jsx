@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { Menu, X, BookOpen, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy } from 'lucide-react'
+import { Menu, X, BookOpen, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp } from 'lucide-react'
 import { SimplePool } from 'nostr-tools/pool'
 import { publishProfile, fetchProfile } from '../lib/nostr'
 import ImageUpload from '../components/ImageUpload'
@@ -10,6 +10,7 @@ import DonatePage from './DonatePage'
 import NewsPage from './NewsPage'
 import CohortsPage from './CohortsPage'
 import AssessmentsPage from './AssessmentsPage'
+import PowPage from './PowPage'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 
@@ -35,6 +36,83 @@ const C = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const shortKey = (npub) => npub ? `${npub.slice(0,10)}…${npub.slice(-4)}` : ''
+
+// ─── Presence system ──────────────────────────────────────────────────────────
+const PRESENCE_TAG = 'bitsavers-online'
+const PRESENCE_TTL = 3 * 60 * 1000    // 3 min = considered online
+const HEARTBEAT_MS = 2 * 60 * 1000    // republish every 2 min
+
+const publishPresence = async (user, status) => {
+  const nsec = localStorage.getItem('bitsavers_nsec')
+  if (!nsec) return
+  try {
+    const skBytes = nsecToBytes(nsec)
+    const pool = getPool()
+    const event = finalizeEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['t', PRESENCE_TAG]],
+      content: status === 'online'
+        ? 'PRESENCE_ONLINE:' + JSON.stringify({ npub: user.npub, name: user.profile?.name || 'Anonymous', picture: user.profile?.picture || null })
+        : 'PRESENCE_OFFLINE:' + JSON.stringify({ npub: user.npub }),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS, event))
+  } catch {}
+}
+
+function usePresence(user) {
+  const [online, setOnline] = useState({}) // npub → { name, picture, lastSeen }
+
+  useEffect(() => {
+    if (!user?.npub) return
+
+    publishPresence(user, 'online')
+    const heartbeat = setInterval(() => publishPresence(user, 'online'), HEARTBEAT_MS)
+    const handleUnload = () => publishPresence(user, 'offline')
+    window.addEventListener('beforeunload', handleUnload)
+
+    const pool = getPool()
+    const seen = new Set()
+    const sub = pool.subscribe(
+      RELAYS,
+      { kinds: [1], '#t': [PRESENCE_TAG], since: Math.floor(Date.now() / 1000) - 600, limit: 200 },
+      {
+        onevent(e) {
+          if (seen.has(e.id)) return
+          seen.add(e.id)
+          const ts = e.created_at * 1000
+          try {
+            if (e.content.startsWith('PRESENCE_ONLINE:')) {
+              const d = JSON.parse(e.content.slice('PRESENCE_ONLINE:'.length))
+              if (!d.npub) return
+              setOnline(prev => ({ ...prev, [d.npub]: { name: d.name, picture: d.picture, lastSeen: ts } }))
+            } else if (e.content.startsWith('PRESENCE_OFFLINE:')) {
+              const d = JSON.parse(e.content.slice('PRESENCE_OFFLINE:'.length))
+              if (!d.npub) return
+              setOnline(prev => { const n = { ...prev }; delete n[d.npub]; return n })
+            }
+          } catch {}
+        },
+        oneose() {}
+      }
+    )
+
+    // Prune stale entries every minute
+    const pruner = setInterval(() => {
+      const cutoff = Date.now() - PRESENCE_TTL
+      setOnline(prev => Object.fromEntries(Object.entries(prev).filter(([, u]) => u.lastSeen > cutoff)))
+    }, 60000)
+
+    return () => {
+      clearInterval(heartbeat)
+      clearInterval(pruner)
+      window.removeEventListener('beforeunload', handleUnload)
+      sub.close()
+    }
+  }, [user?.npub])
+
+  return online
+}
 
 const timeAgo = (ts) => {
   const s = Math.floor(Date.now() / 1000) - ts
@@ -294,6 +372,11 @@ function NostrFeed({ user }) {
             c.startsWith('joined-') ||
             c.startsWith('left-') ||
             c.startsWith('DELETED:') ||
+            c.startsWith('PRESENCE_ONLINE:') ||
+            c.startsWith('PRESENCE_OFFLINE:') ||
+            c.startsWith('POW_BLOCK:') ||
+            c.startsWith('POW_DELETE:') ||
+            c.startsWith('SOCIALS:') ||
             c.includes('DATA:{') ||
             c.includes('DATA:{"')) return
         cache.seenIds.add(event.id)
@@ -600,14 +683,81 @@ const Placeholder = ({ emoji, title, sub }) => (
 // ─── Nav config ───────────────────────────────────────────────────────────────
 const NAV = [
   { id: 'feed',      icon: <Zap size={18} />,       label: 'Live Feed' },
+  { id: 'online',    icon: <Radio size={18} />,      label: 'Members Online' },
   { id: 'news',      icon: <Newspaper size={18} />,  label: 'News & Events' },
   { id: 'cohorts',   icon: <Users size={18} />,      label: 'Cohorts' },
   { id: 'assessments', icon: <BookOpen size={18} />,  label: 'Assessments' },
   { id: 'courses',   icon: <BookOpen size={18} />,   label: 'Courses' },
+  { id: 'pow',       icon: <TrendingUp size={18} />, label: 'Proof of Work' },
   { id: 'donate',    icon: <Zap size={18} />,        label: 'Donate' },
   { id: 'profile',   icon: <User size={18} />,       label: 'My Profile' },
   { id: 'admin',     icon: <Shield size={18} />,     label: 'Admin Panel', adminOnly: true },
 ]
+
+// ─── Online Members Page ─────────────────────────────────────────────────────
+function OnlinePage({ user, onlineUsers }) {
+  const onlineCount = Object.keys(onlineUsers).length
+  const sorted = Object.entries(onlineUsers).sort((a, b) => b[1].lastSeen - a[1].lastSeen)
+
+  return (
+    <div>
+      {/* Header stat */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 14, padding: '16px 20px', marginBottom: 20 }}>
+        <Radio size={18} color={C.green} style={{ animation: 'livePulse 2s infinite', flexShrink: 0 }} />
+        <div>
+          <div style={{ fontSize: 24, fontWeight: 900, color: C.green }}>{onlineCount}</div>
+          <div style={{ fontSize: 12, color: C.green, opacity: 0.8 }}>members online right now</div>
+        </div>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: C.muted, textAlign: 'right' }}>
+          <div>Updates live</div>
+          <div>Heartbeat every 2 min</div>
+        </div>
+      </div>
+
+      {/* Member list */}
+      {sorted.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 0', color: C.muted }}>
+          <Radio size={32} style={{ display: 'block', margin: '0 auto 12px', opacity: 0.3 }} />
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 }}>Nobody online yet</div>
+          <div style={{ fontSize: 13 }}>Members will appear here as they log in</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {sorted.map(([npub, u]) => {
+            const isYou = npub === user?.npub
+            const minsAgo = Math.floor((Date.now() - u.lastSeen) / 60000)
+            return (
+              <div key={npub} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: isYou ? 'rgba(247,147,26,0.06)' : C.card, border: `1px solid ${isYou ? C.border : 'rgba(34,197,94,0.12)'}`, borderRadius: 14 }}>
+                {/* Avatar with green dot */}
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#000', overflow: 'hidden' }}>
+                    {u.picture
+                      ? <img src={u.picture} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display='none'} />
+                      : (u.name || '?').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div style={{ position: 'absolute', bottom: 1, right: 1, width: 11, height: 11, borderRadius: '50%', background: C.green, border: '2px solid #0f0f0f' }} />
+                </div>
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {u.name} {isYou && <span style={{ fontSize: 11, color: C.accent, fontWeight: 600 }}>(you)</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted, fontFamily: 'monospace', marginTop: 2 }}>
+                    {npub.slice(0, 20)}…
+                  </div>
+                </div>
+                {/* Last seen */}
+                <div style={{ fontSize: 11, color: minsAgo === 0 ? C.green : C.muted, flexShrink: 0 }}>
+                  {minsAgo === 0 ? 'just now' : minsAgo + 'm ago'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ─── Main dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
@@ -615,6 +765,8 @@ export default function Dashboard() {
   const [page, setPage] = useState('feed')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const nav = NAV.find(n => n.id === page)
+  const onlineUsers = usePresence(user)
+  const onlineCount = Object.keys(onlineUsers).length
 
   const go = (id) => { setPage(id); setDrawerOpen(false) }
 
@@ -728,10 +880,12 @@ export default function Dashboard() {
           </h1>
         </div>
         {page === 'feed'      && <NostrFeed user={user} />}
+        {page === 'online'    && <OnlinePage user={user} onlineUsers={onlineUsers} />}
         {page === 'news'      && <NewsPage />}
         {page === 'cohorts'   && <CohortsPage user={user} />}
         {page === 'assessments' && <AssessmentsPage user={user} />}
         {page === 'courses'   && <Placeholder title="Courses" sub="Bitcoin courses coming soon!" />}
+        {page === 'pow'       && <PowPage />}
         {page === 'donate'    && <DonatePage />}
         {page === 'profile'   && <ProfilePage user={user} />}
         {page === 'admin'     && <AdminPanel user={user} />}
