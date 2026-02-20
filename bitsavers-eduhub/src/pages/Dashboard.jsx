@@ -12,6 +12,7 @@ import CohortsPage from './CohortsPage'
 import AssessmentsPage from './AssessmentsPage'
 import PowPage from './PowPage'
 import BlogPage from './BlogPage'
+import SponsorsPage from './SponsorsPage'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 
@@ -380,6 +381,7 @@ function NostrFeed({ user }) {
             c.startsWith('SOCIALS:') ||
             c.startsWith('BLOG_POST:') ||
             c.startsWith('BLOG_DELETE:') ||
+            c.startsWith('SPONSORS:') ||
             c.includes('DATA:{') ||
             c.includes('DATA:{"')) return
         cache.seenIds.add(event.id)
@@ -689,6 +691,7 @@ const NAV = [
   { id: 'online',    icon: <Radio size={18} />,      label: 'Members Online' },
   { id: 'news',      icon: <Newspaper size={18} />,  label: 'News & Events' },
   { id: 'blog',      icon: <BookOpen size={18} />,   label: 'Blog' },
+  { id: 'sponsors',  icon: <Users size={18} />,     label: 'Partners' },
   { id: 'cohorts',   icon: <Users size={18} />,      label: 'Cohorts' },
   { id: 'assessments', icon: <BookOpen size={18} />,  label: 'Assessments' },
   { id: 'courses',   icon: <BookOpen size={18} />,   label: 'Courses' },
@@ -887,6 +890,7 @@ export default function Dashboard() {
         {page === 'online'    && <OnlinePage user={user} onlineUsers={onlineUsers} />}
         {page === 'news'      && <NewsPage />}
         {page === 'blog'      && <BlogPage />}
+        {page === 'sponsors'  && <SponsorsPage />}
         {page === 'cohorts'   && <CohortsPage user={user} />}
         {page === 'assessments' && <AssessmentsPage user={user} />}
         {page === 'courses'   && <Placeholder title="Courses" sub="Bitcoin courses coming soon!" />}
