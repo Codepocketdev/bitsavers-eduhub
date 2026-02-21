@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, User, CheckCircle, Loader, RefreshCw } from 'lucide-react'
 import { SimplePool } from 'nostr-tools/pool'
 import { nip19 } from 'nostr-tools'
+import { getPool, nsecToBytes } from '../lib/nostr'
+import { finalizeEvent } from 'nostr-tools/pure'
 
 const C = {
   bg: '#080808', card: '#141414', border: 'rgba(247,147,26,0.18)',
@@ -10,8 +12,23 @@ const C = {
 }
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
+const FOLLOWING_TAG = 'bitsavers-following'
 const getFollowing = () => { try { return JSON.parse(localStorage.getItem('bitsavers_following') || '[]') } catch { return [] } }
 const saveFollowing = (d) => localStorage.setItem('bitsavers_following', JSON.stringify(d))
+
+async function publishFollowing(list) {
+  const nsec = localStorage.getItem('bitsavers_nsec')
+  if (!nsec) throw new Error('No private key found')
+  const skBytes = nsecToBytes(nsec)
+  const pool = getPool()
+  const event = finalizeEvent({
+    kind: 1,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [['t', 'bitsavers'], ['t', FOLLOWING_TAG]],
+    content: 'FOLLOWING:' + JSON.stringify(list),
+  }, skBytes)
+  await Promise.any(pool.publish(RELAYS, event))
+}
 
 function Avatar({ profile = {}, pubkey = '' }) {
   const [err, setErr] = useState(false)
@@ -52,7 +69,30 @@ export default function AdminFollowing() {
   }
 
   useEffect(() => {
-    if (following.length > 0) fetchProfiles(following)
+    // Fetch following list from Nostr on mount
+    const pool = new SimplePool()
+    let latest = { created_at: 0 }
+    const sub = pool.subscribe(RELAYS, { kinds: [1], '#t': [FOLLOWING_TAG], limit: 10 }, {
+      onevent(e) {
+        if (!e.content.startsWith('FOLLOWING:')) return
+        try {
+          if (e.created_at > latest.created_at)
+            latest = { created_at: e.created_at, data: JSON.parse(e.content.slice('FOLLOWING:'.length)) }
+        } catch {}
+      },
+      oneose() {
+        sub.close()
+        if (latest.data) {
+          saveFollowing(latest.data)
+          setFollowing(latest.data)
+          fetchProfiles(latest.data)
+        } else if (following.length > 0) {
+          fetchProfiles(following)
+        }
+      }
+    })
+    setTimeout(() => sub.close(), 8000)
+    return () => sub.close()
   }, [])
 
   const add = async () => {
@@ -69,17 +109,34 @@ export default function AdminFollowing() {
     setFollowing(updated)
     saveFollowing(updated)
     setInput('')
-    // Fetch profile for the new npub
     fetchProfiles([val])
-    setMsg('ok: Added!')
-    setTimeout(() => setMsg(''), 2000)
+    try {
+      await publishFollowing(updated)
+      setMsg('ok: Added and published to Nostr!')
+    } catch {
+      setMsg('ok: Added locally — publish manually below')
+    }
+    setTimeout(() => setMsg(''), 3000)
     setAdding(false)
   }
 
-  const remove = (npub) => {
+  const [publishing, setPublishing] = useState(false)
+
+  const remove = async (npub) => {
     const updated = following.filter(n => n !== npub)
     setFollowing(updated)
     saveFollowing(updated)
+    try { await publishFollowing(updated) } catch {}
+  }
+
+  const publishAll = async () => {
+    setPublishing(true); setMsg('')
+    try {
+      await publishFollowing(following)
+      setMsg('ok: Following list published to Nostr!')
+    } catch (e) { setMsg('err: ' + (e.message || 'Publish failed')) }
+    setPublishing(false)
+    setTimeout(() => setMsg(''), 3000)
   }
 
   const SUGGESTED = [
@@ -174,6 +231,11 @@ export default function AdminFollowing() {
         })}
       </div>
 
+      {following.length > 0 && (
+        <button onClick={publishAll} disabled={publishing} style={{ width: '100%', marginTop: 14, background: C.accent, border: 'none', color: '#000', padding: '13px', borderRadius: 11, fontWeight: 800, fontSize: 14, cursor: publishing ? 'not-allowed' : 'pointer', opacity: publishing ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          {publishing ? <><Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Publishing…</> : 'Publish Following List to Nostr'}
+        </button>
+      )}
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )

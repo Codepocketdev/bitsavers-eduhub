@@ -16,6 +16,7 @@ import ProfileModal from './ProfileModal'
 import MessagesPage from './MessagesPage'
 import SponsorsPage from './SponsorsPage'
 import LiveClassesPage from './LiveClassesPage'
+import CoursesPage from './CoursesPage'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 
@@ -375,6 +376,7 @@ function ComposeModal({ user, profiles, onClose, onPublished }) {
 
 // ─── Live feed ────────────────────────────────────────────────────────────────
 const getFollowing = () => { try { return JSON.parse(localStorage.getItem('bitsavers_following') || '[]') } catch { return [] } }
+const FOLLOWING_TAG = 'bitsavers-following'
 
 const TABS = [
   { id: 'bitsavers', label: '#bitsavers', icon: <Hash size={13} /> },
@@ -432,6 +434,27 @@ function NostrFeed({ user, onProfileClick }) {
     )
   }
 
+  // Sync following list from Nostr on mount
+  useEffect(() => {
+    const pool = getPool()
+    let latest = { created_at: 0 }
+    const sub = pool.subscribe(RELAYS, { kinds: [1], '#t': [FOLLOWING_TAG], limit: 10 }, {
+      onevent(e) {
+        if (!e.content.startsWith('FOLLOWING:')) return
+        try {
+          if (e.created_at > latest.created_at)
+            latest = { created_at: e.created_at, data: JSON.parse(e.content.slice('FOLLOWING:'.length)) }
+        } catch {}
+      },
+      oneose() {
+        sub.close()
+        if (latest.data) localStorage.setItem('bitsavers_following', JSON.stringify(latest.data))
+      }
+    })
+    setTimeout(() => sub.close(), 8000)
+    return () => sub.close()
+  }, [])
+
   useEffect(() => {
     const pool = getPool()
     const since = Math.floor(Date.now() / 1000) - 86400 * 7 // 7 days for following
@@ -480,6 +503,8 @@ function NostrFeed({ user, onProfileClick }) {
             c.startsWith('BLOG_DELETE:') ||
             c.startsWith('SPONSORS:') ||
             c.startsWith('GALLERY:') ||
+            c.startsWith('FOLLOWING:') ||
+            c.startsWith('COURSES:') ||
             c.includes('DATA:{')) return
         cache.seenIds.add(event.id)
 
@@ -1005,7 +1030,7 @@ export default function Dashboard() {
         {page === 'messages'  && <MessagesPage user={user} initialPeer={dmPeer?.pubkey} initialProfile={dmPeer?.profile} />}
         {page === 'cohorts'   && <CohortsPage user={user} onProfileClick={openProfile} />}
         {page === 'assessments' && <AssessmentsPage user={user} />}
-        {page === 'courses'   && <Placeholder title="Courses" sub="Bitcoin courses coming soon!" />}
+        {page === 'courses'   && <CoursesPage />}
         {page === 'liveclasses' && <LiveClassesPage />}
         {page === 'pow'       && <PowPage />}
         {page === 'donate'    && <DonatePage />}

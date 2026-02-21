@@ -11,6 +11,7 @@ import AdminPoW from './AdminPoW'
 import AdminGallery from './AdminGallery'
 import AdminLiveClasses from './AdminLiveClasses'
 import AdminFollowing from './AdminFollowing'
+import AdminCourses from './AdminCourses'
 import AdminBlog from './AdminBlog'
 import AdminSponsors from './AdminSponsors'
 import AdminSocials from './AdminSocials'
@@ -38,6 +39,7 @@ const SECTIONS = [
   { id: 'gallery',     label: 'Gallery',     },
   { id: 'liveclasses',  label: 'Live Classes', },
   { id: 'following',    label: 'Following',    },
+  { id: 'courses',      label: 'Courses',      },
   { id: 'socials',     label: 'Socials',     },
 ]
 
@@ -525,7 +527,7 @@ export default function AdminPanel({ user }) {
       {/* Section tabs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 20 }}>
         {SECTIONS.map(s => {
-          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <BookOpen size={14}/>, assignments: <ClipboardList size={14}/>, submissions: <Inbox size={14}/>, pow: <Hammer size={14}/>, gallery: <Image size={14}/>, liveclasses: <Video size={14}/>, following: <Users size={14}/>, socials: <Share2 size={14}/>, sponsors: <Users size={14}/> }
+          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <BookOpen size={14}/>, assignments: <ClipboardList size={14}/>, submissions: <Inbox size={14}/>, pow: <Hammer size={14}/>, gallery: <Image size={14}/>, liveclasses: <Video size={14}/>, following: <Users size={14}/>, courses: <BookOpen size={14}/>, socials: <Share2 size={14}/>, sponsors: <Users size={14}/> }
           return (
             <button key={s.id} onClick={() => setSection(s.id)} style={{
               background: section === s.id ? C.accent : C.card,
@@ -553,6 +555,7 @@ export default function AdminPanel({ user }) {
         {section === 'gallery'     && <AdminGallery />}
         {section === 'liveclasses'  && <AdminLiveClasses />}
         {section === 'following'    && <AdminFollowing />}
+        {section === 'courses'      && <AdminCourses />}
       {section === 'socials'     && <AdminSocials />}
     </div>
   )
