@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { Menu, X, BookOpen, MessageSquare, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp, MessageCircle, Video } from 'lucide-react'
+import { Menu, X, BookOpen, MessageSquare, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp, MessageCircle, Video, Image as ImageIcon } from 'lucide-react'
 import { SimplePool } from 'nostr-tools/pool'
 import { publishProfile, fetchProfile } from '../lib/nostr'
 import ImageUpload from '../components/ImageUpload'
@@ -167,20 +167,58 @@ function Avatar({ profile = {}, pubkey = '', size = 40 }) {
   )
 }
 
+// ─── Auto-pause video when scrolled out of view ───────────────────────────────
+function AutoPauseVideo({ src }) {
+  const ref = useRef()
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (!entry.isIntersecting) el.pause() },
+      { threshold: 0.2 } // pause when less than 20% visible
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <video
+      ref={ref} src={src} controls
+      style={{ display: 'block', maxWidth: '100%', borderRadius: 12, marginTop: 10 }}
+      onPlay={e => {
+        document.querySelectorAll('video').forEach(v => { if (v !== e.target) v.pause() })
+      }}
+    />
+  )
+}
+
 // ─── Post card ────────────────────────────────────────────────────────────────
 function PostCard({ event, profiles, onProfileClick }) {
   const profile = profiles[event.pubkey] || {}
   const npub = (() => { try { return nip19.npubEncode(event.pubkey) } catch { return '' } })()
   const name = profile.name || profile.display_name || shortKey(npub)
 
-  // Render text with clickable URLs
+  // Render text with inline images and clickable URLs
+  const isImageUrl = (url) => /\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i.test(url) || url.includes('imgbb.com') || url.includes('nostr.build') || url.includes('void.cat') || url.includes('imgur.com') || url.includes('i.ibb.co')
+  const isVideoUrl = (url) => /\.(mp4|webm|mov)(\?.*)?$/i.test(url)
+
   const renderContent = (text) => {
     const parts = text.split(/(https?:\/\/[^\s]+)/g)
-    return parts.map((p, i) =>
-      p.match(/^https?:\/\//)
-        ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" style={{ color: C.accent, wordBreak: 'break-all' }}>{p}</a>
-        : <span key={i}>{p}</span>
-    )
+    return parts.map((p, i) => {
+      if (!p.match(/^https?:\/\//)) return <span key={i}>{p}</span>
+      if (isImageUrl(p)) return (
+        <img key={i} src={p} alt="" loading="lazy"
+          style={{ display: 'block', maxWidth: '100%', borderRadius: 12, marginTop: 10, border: `1px solid ${C.border}`, cursor: 'pointer' }}
+          onClick={() => window.open(p, '_blank')}
+          onError={e => { e.target.style.display = 'none' }}
+        />
+      )
+      if (isVideoUrl(p)) return (
+        <AutoPauseVideo key={i} src={p} />
+      )
+      return <a key={i} href={p} target="_blank" rel="noopener noreferrer" style={{ color: C.accent, wordBreak: 'break-all' }}>{p}</a>
+    })
   }
 
   return (
@@ -223,8 +261,29 @@ function ComposeModal({ user, profiles, onClose, onPublished }) {
   const [text, setText] = useState('')
   const [status, setStatus] = useState('idle') // idle | busy | ok | err
   const [errMsg, setErrMsg] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [previewImg, setPreviewImg] = useState(null)
   const taRef = useRef()
   useEffect(() => taRef.current?.focus(), [])
+
+  const uploadImage = async (file) => {
+    if (!file?.type.startsWith('image/')) return
+    if (file.size > 5 * 1024 * 1024) { setErrMsg('Max 5MB'); setStatus('err'); return }
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('image', file)
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${import.meta.env.VITE_IMGBB_KEY}`, { method: 'POST', body: formData })
+      const json = await res.json()
+      const url = json?.data?.display_url
+      if (url) {
+        setPreviewImg(url)
+        setText(prev => prev ? prev + '\n' + url : url)
+        taRef.current?.focus()
+      }
+    } catch { setErrMsg('Image upload failed'); setStatus('err') }
+    setUploading(false)
+  }
 
   const publish = async () => {
     if (!text.trim() || status === 'busy') return
@@ -273,7 +332,16 @@ function ComposeModal({ user, profiles, onClose, onPublished }) {
               maxLength={280} rows={4}
               style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: C.text, fontSize: 16, lineHeight: 1.6, resize: 'none', fontFamily: 'inherit' }}
             />
-            <div style={{ fontSize: 12, color: C.muted }}>Posts with <span style={{ color: C.accent }}>#bitsavers #bitcoin</span></div>
+            {previewImg && (
+              <div style={{ position: 'relative', marginTop: 8 }}>
+                <img src={previewImg} alt="" style={{ width: '100%', maxHeight: 200, objectFit: 'cover', borderRadius: 10, border: `1px solid ${C.border}` }} />
+                <button onClick={() => { setPreviewImg(null); setText(t => t.replace(previewImg, '').trim()) }}
+                  style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff', borderRadius: '50%', width: 24, height: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  ×
+                </button>
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Posts with <span style={{ color: C.accent }}>#bitsavers #bitcoin</span></div>
           </div>
         </div>
         <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 14, paddingTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -281,6 +349,12 @@ function ComposeModal({ user, profiles, onClose, onPublished }) {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {status === 'err' && <span style={{ fontSize: 12, color: C.red, display: 'flex', gap: 4 }}><AlertCircle size={13} />{errMsg}</span>}
             {status === 'ok'  && <span style={{ fontSize: 12, color: C.green, display: 'flex', gap: 4 }}><CheckCircle size={13} />Published!</span>}
+            {/* Image upload button */}
+            <label style={{ cursor: uploading ? 'not-allowed' : 'pointer', color: uploading ? C.muted : C.accent, display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, padding: '8px 12px', background: C.dim, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+              {uploading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <ImageIcon size={13} />}
+              {uploading ? '' : 'Photo'}
+              <input type="file" accept="image/*" disabled={uploading} onChange={e => uploadImage(e.target.files?.[0])} style={{ display: 'none' }} />
+            </label>
             <button onClick={onClose} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.muted, padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
             <button onClick={publish} disabled={!text.trim() || status === 'busy' || status === 'ok'} style={{
               background: text.trim() ? C.accent : 'rgba(247,147,26,0.3)', border: 'none',
@@ -300,16 +374,19 @@ function ComposeModal({ user, profiles, onClose, onPublished }) {
 }
 
 // ─── Live feed ────────────────────────────────────────────────────────────────
+const getFollowing = () => { try { return JSON.parse(localStorage.getItem('bitsavers_following') || '[]') } catch { return [] } }
+
 const TABS = [
   { id: 'bitsavers', label: '#bitsavers', icon: <Hash size={13} /> },
   { id: 'bitcoin',   label: 'Bitcoin',    icon: <Globe size={13} /> },
+  { id: 'following', label: 'Following',  icon: <Users size={13} /> },
 ]
 
 // ── Per-tab cache lives OUTSIDE the component so it survives tab switches ──
-// This is the fix for mobile empty feed on tab switch
 const feedCache = {
   bitsavers: { posts: [], profiles: {}, seenIds: new Set() },
   bitcoin:   { posts: [], profiles: {}, seenIds: new Set() },
+  following: { posts: [], profiles: {}, seenIds: new Set() },
 }
 
 function NostrFeed({ user, onProfileClick }) {
@@ -357,14 +434,28 @@ function NostrFeed({ user, onProfileClick }) {
 
   useEffect(() => {
     const pool = getPool()
-    const since = Math.floor(Date.now() / 1000) - 86400
+    const since = Math.floor(Date.now() / 1000) - 86400 * 7 // 7 days for following
+    const followingList = getFollowing()
+    const followingHexList = followingList.map(npub => {
+      try { return nip19.decode(npub).data } catch { return null }
+    }).filter(Boolean)
+
     const filter = tab === 'bitsavers'
-      ? { kinds: [1], '#t': ['bitsavers'], since, limit: 50 }
-      : { kinds: [1], '#t': ['bitcoin'], since, limit: 50 }
+      ? { kinds: [1], '#t': ['bitsavers'], since: Math.floor(Date.now()/1000) - 86400, limit: 50 }
+      : tab === 'bitcoin'
+      ? { kinds: [1], '#t': ['bitcoin'], since: Math.floor(Date.now()/1000) - 86400, limit: 50 }
+      : followingHexList.length > 0
+      ? { kinds: [1], authors: followingHexList, since, limit: 100 }
+      : null
 
     let batchTimer
     const batch = []
     const cache = feedCache[tab]
+
+    if (!filter) {
+      setLoading(false)
+      return
+    }
 
     const sub = pool.subscribe(RELAYS, filter, {
       onevent(event) {

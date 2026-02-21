@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { SimplePool } from 'nostr-tools/pool'
 import { RefreshCw, Play, Calendar, User, ExternalLink } from 'lucide-react'
 
@@ -10,6 +10,34 @@ const C = {
   border: 'rgba(247,147,26,0.18)', accent: '#F7931A',
   dim: 'rgba(247,147,26,0.12)', text: '#F0EBE0',
   muted: '#666', green: '#22c55e',
+}
+
+// ─── Auto-pause video when scrolled out of view ───────────────────────────────
+function AutoPauseVideo({ src, style = {} }) {
+  const ref = useRef()
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (!entry.isIntersecting) el.pause() },
+      { threshold: 0.2 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <video
+      ref={ref} controls
+      style={{ width: '100%', borderRadius: 12, maxHeight: 320, background: '#000', display: 'block', ...style }}
+      onPlay={e => {
+        document.querySelectorAll('video').forEach(v => { if (v !== e.target) v.pause() })
+      }}
+    >
+      <source src={src} />
+    </video>
+  )
 }
 
 // ─── Detect platform + extract ID ────────────────────────────────────────────
@@ -31,8 +59,23 @@ function parseUrl(url) {
 // ─── YouTube player ───────────────────────────────────────────────────────────
 function YouTubeEmbed({ id }) {
   const [playing, setPlaying] = useState(false)
+  const containerRef = useRef()
+
+  useEffect(() => {
+    if (!playing) return
+    const el = containerRef.current
+    if (!el) return
+    // When scrolled out of view — reset to thumbnail (stops audio)
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (!entry.isIntersecting) setPlaying(false) },
+      { threshold: 0.2 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [playing])
+
   return (
-    <div style={{ position: 'relative', paddingBottom: '56.25%', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
+    <div ref={containerRef} style={{ position: 'relative', paddingBottom: '56.25%', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
       {!playing ? (
         <div onClick={() => setPlaying(true)} style={{ position: 'absolute', inset: 0, cursor: 'pointer' }}>
           <img
@@ -40,9 +83,7 @@ function YouTubeEmbed({ id }) {
             onError={e => { e.target.src = `https://img.youtube.com/vi/${id}/hqdefault.jpg` }}
             alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
-          {/* Dark overlay */}
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }} />
-          {/* Play button */}
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 32px rgba(247,147,26,0.6)' }}>
               <Play size={28} fill="#000" color="#000" style={{ marginLeft: 4 }} />
@@ -62,13 +103,33 @@ function YouTubeEmbed({ id }) {
 
 // ─── TikTok embed ─────────────────────────────────────────────────────────────
 function TikTokEmbed({ id, url }) {
+  const [visible, setVisible] = useState(false)
+  const ref = useRef()
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setVisible(entry.isIntersecting),
+      { threshold: 0.2 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   return (
-    <div style={{ borderRadius: 12, overflow: 'hidden', background: '#000', display: 'flex', justifyContent: 'center' }}>
-      <iframe
-        src={`https://www.tiktok.com/embed/v2/${id}`}
-        style={{ width: '100%', height: 500, border: 'none', maxWidth: 360 }}
-        allowFullScreen allow="encrypted-media"
-      />
+    <div ref={ref} style={{ borderRadius: 12, overflow: 'hidden', background: '#000', display: 'flex', justifyContent: 'center' }}>
+      {visible ? (
+        <iframe
+          src={`https://www.tiktok.com/embed/v2/${id}`}
+          style={{ width: '100%', height: 500, border: 'none', maxWidth: 360 }}
+          allowFullScreen allow="encrypted-media"
+        />
+      ) : (
+        <div style={{ width: '100%', height: 500, maxWidth: 360, background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Play size={40} color="#555" />
+        </div>
+      )}
     </div>
   )
 }
@@ -127,11 +188,7 @@ function MediaBlock({ post }) {
   )
   if (parsed.platform === 'instagram') return <InstagramCard url={post.videoUrl} thumbnail={post.thumbnail} title={post.oembedTitle} />
   if (parsed.platform === 'twitter') return <TwitterCard url={post.videoUrl} thumbnail={post.thumbnail} />
-  if (parsed.platform === 'video') return (
-    <video controls style={{ width: '100%', borderRadius: 12, maxHeight: 320, background: '#000', display: 'block' }}>
-      <source src={post.videoUrl} />
-    </video>
-  )
+  if (parsed.platform === 'video') return <AutoPauseVideo src={post.videoUrl} />
   return null
 }
 
