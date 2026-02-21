@@ -387,6 +387,7 @@ function NostrFeed({ user, onProfileClick }) {
             c.startsWith('BLOG_POST:') ||
             c.startsWith('BLOG_DELETE:') ||
             c.startsWith('SPONSORS:') ||
+            c.startsWith('GALLERY:') ||
             c.includes('DATA:{')) return
         cache.seenIds.add(event.id)
 
