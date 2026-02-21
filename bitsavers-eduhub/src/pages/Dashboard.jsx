@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { Menu, X, BookOpen, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp } from 'lucide-react'
+import { Menu, X, BookOpen, MessageSquare, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp, MessageCircle } from 'lucide-react'
 import { SimplePool } from 'nostr-tools/pool'
 import { publishProfile, fetchProfile } from '../lib/nostr'
 import ImageUpload from '../components/ImageUpload'
@@ -12,6 +12,8 @@ import CohortsPage from './CohortsPage'
 import AssessmentsPage from './AssessmentsPage'
 import PowPage from './PowPage'
 import BlogPage from './BlogPage'
+import ProfileModal from './ProfileModal'
+import MessagesPage from './MessagesPage'
 import SponsorsPage from './SponsorsPage'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
@@ -38,6 +40,7 @@ const C = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const shortKey = (npub) => npub ? `${npub.slice(0,10)}…${npub.slice(-4)}` : ''
+const npubToHex = (npub) => { try { return nip19.decode(npub).data } catch { return null } }
 
 // ─── Presence system ──────────────────────────────────────────────────────────
 const PRESENCE_TAG = 'bitsavers-online'
@@ -164,7 +167,7 @@ function Avatar({ profile = {}, pubkey = '', size = 40 }) {
 }
 
 // ─── Post card ────────────────────────────────────────────────────────────────
-function PostCard({ event, profiles }) {
+function PostCard({ event, profiles, onProfileClick }) {
   const profile = profiles[event.pubkey] || {}
   const npub = (() => { try { return nip19.npubEncode(event.pubkey) } catch { return '' } })()
   const name = profile.name || profile.display_name || shortKey(npub)
@@ -185,10 +188,12 @@ function PostCard({ event, profiles }) {
       borderRadius: 14, padding: 16, marginBottom: 10,
     }}>
       <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-        <Avatar profile={profile} pubkey={event.pubkey} size={44} />
+        <div onClick={() => onProfileClick && onProfileClick(event.pubkey, profile)} style={{ cursor: 'pointer' }}>
+          <Avatar profile={profile} pubkey={event.pubkey} size={44} />
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{name}</span>
+            <span onClick={() => onProfileClick && onProfileClick(event.pubkey, profile)} style={{ fontWeight: 700, fontSize: 14, color: C.text, cursor: 'pointer' }}>{name}</span>
             {profile.nip05 && (
               <span style={{ fontSize: 11, color: C.accent, display: 'flex', alignItems: 'center', gap: 3 }}>
                 <CheckCircle size={11} /> {profile.nip05}
@@ -306,7 +311,7 @@ const feedCache = {
   bitcoin:   { posts: [], profiles: {}, seenIds: new Set() },
 }
 
-function NostrFeed({ user }) {
+function NostrFeed({ user, onProfileClick }) {
   const [tab, setTab] = useState('bitsavers')
   const [posts, setPosts] = useState(feedCache.bitsavers.posts)
   const [profiles, setProfiles] = useState(feedCache.bitsavers.profiles)
@@ -382,8 +387,7 @@ function NostrFeed({ user }) {
             c.startsWith('BLOG_POST:') ||
             c.startsWith('BLOG_DELETE:') ||
             c.startsWith('SPONSORS:') ||
-            c.includes('DATA:{') ||
-            c.includes('DATA:{"')) return
+            c.includes('DATA:{')) return
         cache.seenIds.add(event.id)
 
         if (isInitial.current) {
@@ -484,7 +488,7 @@ function NostrFeed({ user }) {
       )}
 
       {/* Posts */}
-      {posts.map(e => <PostCard key={e.id} event={e} profiles={profiles} />)}
+      {posts.map(e => <PostCard key={e.id} event={e} profiles={profiles} onProfileClick={onProfileClick} />)}
 
       {/* Floating + button */}
       <button onClick={() => setShowCompose(true)} style={{
@@ -692,6 +696,7 @@ const NAV = [
   { id: 'news',      icon: <Newspaper size={18} />,  label: 'News & Events' },
   { id: 'blog',      icon: <BookOpen size={18} />,   label: 'Blog' },
   { id: 'sponsors',  icon: <Users size={18} />,     label: 'Partners' },
+  { id: 'messages',  icon: <MessageCircle size={18} />, label: 'Messages' },
   { id: 'cohorts',   icon: <Users size={18} />,      label: 'Cohorts' },
   { id: 'assessments', icon: <BookOpen size={18} />,  label: 'Assessments' },
   { id: 'courses',   icon: <BookOpen size={18} />,   label: 'Courses' },
@@ -702,7 +707,7 @@ const NAV = [
 ]
 
 // ─── Online Members Page ─────────────────────────────────────────────────────
-function OnlinePage({ user, onlineUsers }) {
+function OnlinePage({ user, onlineUsers, onProfileClick }) {
   const onlineCount = Object.keys(onlineUsers).length
   const sorted = Object.entries(onlineUsers).sort((a, b) => b[1].lastSeen - a[1].lastSeen)
 
@@ -734,7 +739,7 @@ function OnlinePage({ user, onlineUsers }) {
             const isYou = npub === user?.npub
             const minsAgo = Math.floor((Date.now() - u.lastSeen) / 60000)
             return (
-              <div key={npub} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: isYou ? 'rgba(247,147,26,0.06)' : C.card, border: `1px solid ${isYou ? C.border : 'rgba(34,197,94,0.12)'}`, borderRadius: 14 }}>
+              <div key={npub} onClick={() => !isYou && onProfileClick && onProfileClick(npubToHex(npub), u)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: isYou ? 'rgba(247,147,26,0.06)' : C.card, border: `1px solid ${isYou ? C.border : 'rgba(34,197,94,0.12)'}`, borderRadius: 14, cursor: isYou ? 'default' : 'pointer' }}>
                 {/* Avatar with green dot */}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
                   <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#000', overflow: 'hidden' }}>
@@ -771,6 +776,18 @@ export default function Dashboard() {
   const { user, logout } = useAuth()
   const [page, setPage] = useState('feed')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [selectedProfile, setSelectedProfile] = useState(null) // { pubkey, profile }
+  const [dmPeer, setDmPeer] = useState(null)
+
+  const openProfile = (pubkey, profile = {}) => {
+    if (!pubkey) return
+    setSelectedProfile({ pubkey, profile })
+  }
+  const openDM = (pubkey, profile = {}) => {
+    setDmPeer({ pubkey, profile })
+    setPage('messages')
+    setDrawerOpen(false)
+  }
   const nav = NAV.find(n => n.id === page)
   const onlineUsers = usePresence(user)
   const onlineCount = Object.keys(onlineUsers).length
@@ -886,16 +903,24 @@ export default function Dashboard() {
             {nav?.icon} {nav?.label}
           </h1>
         </div>
-        {page === 'feed'      && <NostrFeed user={user} />}
-        {page === 'online'    && <OnlinePage user={user} onlineUsers={onlineUsers} />}
+        {page === 'feed'      && <NostrFeed user={user} onProfileClick={openProfile} />}
+        {page === 'online'    && <OnlinePage user={user} onlineUsers={onlineUsers} onProfileClick={openProfile} />}
         {page === 'news'      && <NewsPage />}
         {page === 'blog'      && <BlogPage />}
         {page === 'sponsors'  && <SponsorsPage />}
-        {page === 'cohorts'   && <CohortsPage user={user} />}
+        {page === 'messages'  && <MessagesPage user={user} initialPeer={dmPeer?.pubkey} initialProfile={dmPeer?.profile} />}
+        {page === 'cohorts'   && <CohortsPage user={user} onProfileClick={openProfile} />}
         {page === 'assessments' && <AssessmentsPage user={user} />}
         {page === 'courses'   && <Placeholder title="Courses" sub="Bitcoin courses coming soon!" />}
         {page === 'pow'       && <PowPage />}
         {page === 'donate'    && <DonatePage />}
+        {selectedProfile && (
+          <ProfileModal
+            pubkey={selectedProfile.pubkey}
+            onClose={() => setSelectedProfile(null)}
+            onDM={(pubkey, profile) => openDM(pubkey, profile)}
+          />
+        )}
         {page === 'profile'   && <ProfilePage user={user} />}
         {page === 'admin'     && <AdminPanel user={user} />}
       </main>
