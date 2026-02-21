@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { SimplePool } from 'nostr-tools/pool'
-import { Zap, Copy, CheckCircle, X, Twitter, Instagram, Facebook, Github, Linkedin, Mail, Globe } from 'lucide-react'
+import { Zap, Copy, CheckCircle, X, Twitter, Instagram, Facebook, Github, Linkedin, Mail, Globe, Loader } from 'lucide-react'
 
 const ICON_MAP = {
   twitter: <Twitter size={16} />, instagram: <Instagram size={16} />,
@@ -26,9 +26,34 @@ const BLINK_ADDRESS = 'hodlcurator@blink.sv'
 const BLINK_LN_URL = 'https://pay.blink.sv/hodlcurator'
 const presets = [100, 1000, 5000, 21000, 100000]
 
-// ─── Invoice Modal ────────────────────────────────────────────────────────────
-function InvoiceModal({ invoice, amount, onClose }) {
+// ─── Invoice Modal with payment detection ─────────────────────────────────────
+function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
   const [copied, setCopied] = useState(false)
+  const [paid, setPaid] = useState(false)
+  const pollRef = useRef(null)
+
+  // Poll verify URL every 2 seconds to detect payment
+  useEffect(() => {
+    if (!verifyUrl) return
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(verifyUrl)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.settled === true) {
+          clearInterval(pollRef.current)
+          setPaid(true)
+          setTimeout(() => {
+            onPaid?.()
+            onClose()
+          }, 2500) // show success for 2.5s then close
+        }
+      } catch {}
+    }, 2000)
+
+    return () => clearInterval(pollRef.current)
+  }, [verifyUrl])
 
   const copy = async () => {
     try {
@@ -42,7 +67,7 @@ function InvoiceModal({ invoice, amount, onClose }) {
 
   return (
     <div
-      onClick={e => e.target === e.currentTarget && onClose()}
+      onClick={e => e.target === e.currentTarget && !paid && onClose()}
       style={{
         position: 'fixed', inset: 0, zIndex: 300,
         background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
@@ -51,80 +76,108 @@ function InvoiceModal({ invoice, amount, onClose }) {
       }}
     >
       <div style={{
-        background: C.surface, border: `1px solid ${C.border}`,
+        background: C.surface, border: `1px solid ${paid ? 'rgba(34,197,94,0.4)' : C.border}`,
         borderRadius: 20, width: '100%', maxWidth: 380,
         padding: 28, position: 'relative',
         animation: 'popIn 0.2s ease',
+        transition: 'border-color 0.3s',
       }}>
-        {/* Close */}
-        <button onClick={onClose} style={{
-          position: 'absolute', top: 16, right: 16,
-          background: 'rgba(255,255,255,0.06)', border: 'none',
-          color: C.muted, width: 32, height: 32, borderRadius: '50%',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <X size={16} />
-        </button>
-
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 0 24px rgba(247,147,26,0.4)' }}>
-            <Zap size={26} color={C.bg} fill={C.bg} />
-          </div>
-          <div style={{ fontSize: 20, fontWeight: 900, color: C.text, marginBottom: 4 }}>
-            {amount.toLocaleString()} sats
-          </div>
-          <div style={{ fontSize: 13, color: C.muted }}>Scan with any Lightning wallet</div>
-        </div>
-
-        {/* QR Code */}
-        <div style={{ background: '#fff', borderRadius: 14, padding: 12, marginBottom: 20, textAlign: 'center' }}>
-          <img
-            src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(invoice)}&margin=4`}
-            alt="Lightning QR"
-            style={{ width: '100%', maxWidth: 240, display: 'block', margin: '0 auto', borderRadius: 8 }}
-          />
-        </div>
-
-        {/* Invoice string */}
-        <div style={{
-          background: '#0a0a0a', border: `1px solid ${C.border}`,
-          borderRadius: 9, padding: '10px 12px',
-          fontSize: 9, fontFamily: 'monospace', color: C.muted,
-          wordBreak: 'break-all', lineHeight: 1.5, marginBottom: 16,
-        }}>
-          {invoice.slice(0, 80)}…
-        </div>
-
-        {/* Action buttons */}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={copy} style={{
-            flex: 1, background: copied ? 'rgba(34,197,94,0.15)' : C.dim,
-            border: `1px solid ${copied ? 'rgba(34,197,94,0.4)' : C.border}`,
-            color: copied ? C.green : C.accent,
-            padding: 13, borderRadius: 10, fontWeight: 700, fontSize: 13,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        {!paid && (
+          <button onClick={onClose} style={{
+            position: 'absolute', top: 16, right: 16,
+            background: 'rgba(255,255,255,0.06)', border: 'none',
+            color: C.muted, width: 32, height: 32, borderRadius: '50%',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            {copied ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy</>}
+            <X size={16} />
           </button>
-          <button onClick={openWallet} style={{
-            flex: 1, background: C.accent, border: 'none', color: C.bg,
-            padding: 13, borderRadius: 10, fontWeight: 700, fontSize: 13,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          }}>
-            <Zap size={14} fill={C.bg} /> Open Wallet
-          </button>
-        </div>
+        )}
 
-        <div style={{ textAlign: 'center', marginTop: 14 }}>
-          <a href={BLINK_LN_URL} target="_blank" rel="noopener noreferrer"
-            style={{ fontSize: 12, color: C.muted, textDecoration: 'none' }}>
-            Or pay directly on Blink →
-          </a>
-        </div>
+        {/* Paid success screen */}
+        {paid ? (
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(34,197,94,0.15)', border: '2px solid rgba(34,197,94,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', animation: 'scaleIn 0.3s ease' }}>
+              <CheckCircle size={36} color={C.green} />
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: C.green, marginBottom: 8 }}>Payment Received!</div>
+            <div style={{ fontSize: 14, color: C.muted }}>Thank you for supporting BitSavers</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: C.accent, marginTop: 12 }}>{amount.toLocaleString()} sats</div>
+          </div>
+        ) : (
+          <>
+            {/* Header */}
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 0 24px rgba(247,147,26,0.4)' }}>
+                <Zap size={26} color={C.bg} fill={C.bg} />
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 900, color: C.text, marginBottom: 4 }}>
+                {amount.toLocaleString()} sats
+              </div>
+              <div style={{ fontSize: 13, color: C.muted }}>Scan with any Lightning wallet</div>
+            </div>
+
+            {/* QR */}
+            <div style={{ background: '#fff', borderRadius: 14, padding: 12, marginBottom: 16, textAlign: 'center' }}>
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(invoice)}&margin=4`}
+                alt="Lightning QR"
+                style={{ width: '100%', maxWidth: 240, display: 'block', margin: '0 auto', borderRadius: 8 }}
+              />
+            </div>
+
+            {/* Waiting for payment indicator */}
+            {verifyUrl && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 14, padding: '8px 14px', background: 'rgba(247,147,26,0.06)', border: `1px solid ${C.border}`, borderRadius: 9 }}>
+                <Loader size={13} color={C.accent} style={{ animation: 'spin 1s linear infinite' }} />
+                <span style={{ fontSize: 12, color: C.muted }}>Waiting for payment…</span>
+              </div>
+            )}
+
+            {/* Invoice string */}
+            <div style={{
+              background: '#0a0a0a', border: `1px solid ${C.border}`,
+              borderRadius: 9, padding: '10px 12px',
+              fontSize: 9, fontFamily: 'monospace', color: C.muted,
+              wordBreak: 'break-all', lineHeight: 1.5, marginBottom: 16,
+            }}>
+              {invoice.slice(0, 80)}…
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={copy} style={{
+                flex: 1, background: copied ? 'rgba(34,197,94,0.15)' : C.dim,
+                border: `1px solid ${copied ? 'rgba(34,197,94,0.4)' : C.border}`,
+                color: copied ? C.green : C.accent,
+                padding: 13, borderRadius: 10, fontWeight: 700, fontSize: 13,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}>
+                {copied ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy</>}
+              </button>
+              <button onClick={openWallet} style={{
+                flex: 1, background: C.accent, border: 'none', color: C.bg,
+                padding: 13, borderRadius: 10, fontWeight: 700, fontSize: 13,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}>
+                <Zap size={14} fill={C.bg} /> Open Wallet
+              </button>
+            </div>
+
+            <div style={{ textAlign: 'center', marginTop: 14 }}>
+              <a href={BLINK_LN_URL} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 12, color: C.muted, textDecoration: 'none' }}>
+                Or pay directly on Blink →
+              </a>
+            </div>
+          </>
+        )}
       </div>
 
-      <style>{`@keyframes popIn { from { transform: scale(0.92); opacity: 0 } to { transform: scale(1); opacity: 1 } }`}</style>
+      <style>{`
+        @keyframes popIn { from { transform: scale(0.92); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+        @keyframes scaleIn { from { transform: scale(0); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+        @keyframes spin { to { transform: rotate(360deg) } }
+      `}</style>
     </div>
   )
 }
@@ -134,12 +187,12 @@ export default function DonatePage() {
   const [amount, setAmount] = useState(1000)
   const [loading, setLoading] = useState(false)
   const [invoice, setInvoice] = useState('')
+  const [verifyUrl, setVerifyUrl] = useState('')
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [socials, setSocials] = useState(getSocials)
 
   useEffect(() => {
-    // Fetch latest socials from Nostr — updates localStorage for all future loads
     const pool = new SimplePool()
     const SRELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
     let latest = { created_at: 0 }
@@ -166,6 +219,7 @@ export default function DonatePage() {
     setLoading(true)
     setError('')
     setInvoice('')
+    setVerifyUrl('')
     try {
       const [user, domain] = BLINK_ADDRESS.split('@')
       const metaRes = await fetch(`https://${domain}/.well-known/lnurlp/${user}`)
@@ -179,6 +233,8 @@ export default function DonatePage() {
       const invData = await invRes.json()
       if (invData.status === 'ERROR') throw new Error(invData.reason)
       setInvoice(invData.pr)
+      // Save verify URL if provided (LUD-12)
+      if (invData.verify) setVerifyUrl(invData.verify)
       setShowModal(true)
     } catch (e) {
       setError(e.message || 'Failed to get invoice')
@@ -186,9 +242,14 @@ export default function DonatePage() {
     setLoading(false)
   }
 
+  const handleClose = () => {
+    setShowModal(false)
+    setInvoice('')
+    setVerifyUrl('')
+  }
+
   return (
     <div style={{ maxWidth: 500, margin: '0 auto' }}>
-      {/* Header */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, textAlign: 'center', marginBottom: 16 }}>
         <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: '0 0 32px rgba(247,147,26,0.4)' }}>
           <Zap size={36} color={C.bg} fill={C.bg} />
@@ -202,11 +263,9 @@ export default function DonatePage() {
         </div>
       </div>
 
-      {/* Amount selector */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 22, marginBottom: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 }}>Select Amount (sats)</div>
 
-        {/* Presets */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 20 }}>
           {presets.map(p => (
             <button key={p} onClick={() => setAmount(p)} style={{
@@ -221,7 +280,6 @@ export default function DonatePage() {
           ))}
         </div>
 
-        {/* Slider */}
         <div style={{ marginBottom: 16 }}>
           <input type="range" min={1} max={1000000} value={amount}
             onChange={e => setAmount(Number(e.target.value))}
@@ -231,7 +289,6 @@ export default function DonatePage() {
           </div>
         </div>
 
-        {/* Manual input */}
         <div style={{ position: 'relative', marginBottom: 12 }}>
           <input type="number" value={amount} onChange={e => setAmount(Math.max(1, Number(e.target.value)))}
             style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 60px 14px 16px', color: C.text, fontSize: 22, fontWeight: 800, outline: 'none', textAlign: 'center' }} />
@@ -259,16 +316,16 @@ export default function DonatePage() {
         </button>
       </div>
 
-      {/* Invoice modal popup */}
       {showModal && invoice && (
         <InvoiceModal
           invoice={invoice}
+          verifyUrl={verifyUrl}
           amount={amount}
-          onClose={() => { setShowModal(false); setInvoice('') }}
+          onClose={handleClose}
+          onPaid={() => console.log('Payment confirmed!')}
         />
       )}
 
-      {/* Social links */}
       {socials.length > 0 && (
         <div style={{ maxWidth: 420, margin: '0 auto 24px', padding: '20px', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, textAlign: 'center' }}>
           <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Follow Us</div>
