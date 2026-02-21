@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
 import { SimplePool } from 'nostr-tools/pool'
-import { Loader, Calendar, Newspaper, AlertCircle } from 'lucide-react'
+import { nip19 } from 'nostr-tools'
+import { nsecToBytes } from '../lib/nostr'
+import { finalizeEvent } from 'nostr-tools/pure'
+import { generateTicket, generateTicketId } from './ticketGenerator'
+import { Loader, Calendar, Newspaper, AlertCircle, CheckCircle, MapPin, Clock, Users, Download, Ticket } from 'lucide-react'
 
 const C = {
   bg: '#080808', surface: '#0f0f0f', card: '#141414',
@@ -19,6 +23,221 @@ const timeAgo = (ts) => {
   if (s < 3600) return `${Math.floor(s/60)}m ago`
   if (s < 86400) return `${Math.floor(s/3600)}h ago`
   return new Date(ts * 1000).toLocaleDateString()
+}
+
+
+// ─── RSVP storage ─────────────────────────────────────────────────────────────
+const getRsvps = () => { try { return JSON.parse(localStorage.getItem('bitsavers_rsvps') || '{}') } catch { return {} } }
+// isRsvped checks localStorage cache only — source of truth is Nostr
+const isRsvped = (id) => { const r = getRsvps()[id]; return r === true || (r && r.rsvped) }
+// getStoredTicketId — returns cached ticketId if exists (deterministic so same value always)
+const getStoredTicketId = (eventId) => { const r = getRsvps()[eventId]; return (r && r.ticketId) || null }
+const cacheRsvp = (eventId, ticketId) => {
+  const rsvps = getRsvps()
+  rsvps[eventId] = { rsvped: true, ticketId }
+  localStorage.setItem('bitsavers_rsvps', JSON.stringify(rsvps))
+}
+const clearRsvpCache = (eventId) => {
+  const rsvps = getRsvps()
+  delete rsvps[eventId]
+  localStorage.setItem('bitsavers_rsvps', JSON.stringify(rsvps))
+}
+
+// ─── Event Card ───────────────────────────────────────────────────────────────
+function EventCard({ event }) {
+  const [rsvped, setRsvped] = useState(isRsvped(event.id))
+  const [animate, setAnimate] = useState(false)
+  const isPast = new Date(event.date) < new Date()
+
+  const [publishing, setPublishing] = useState(false)
+  const [ticketReady, setTicketReady] = useState(isRsvped(event.id))
+  const [publishError, setPublishError] = useState(false)
+
+  const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
+
+  const toggleRsvp = async () => {
+    const next = !rsvped
+
+    // Once RSVPed the button is locked — this branch should never fire
+    if (!next) return
+
+    // RSVP flow
+    setAnimate(true)
+    setTimeout(() => setAnimate(false), 600)
+    setPublishing(true)
+    setPublishError(false)
+
+    try {
+      const nsec = localStorage.getItem('bitsavers_nsec')
+      const npub = localStorage.getItem('bitsavers_npub') || ''
+
+      // Deterministic ticketId — same npub+eventId always = same ticket, no Date.now()
+      const ticketId = generateTicketId(npub, event.id)
+
+      // Check if already cached (user re-RSVPing after clearing storage)
+      const existing = getStoredTicketId(event.id)
+      if (existing && existing !== ticketId) {
+        // Shouldn't happen with deterministic hash, but safety check
+        console.warn('TicketId mismatch — using deterministic one')
+      }
+
+      if (!nsec) {
+        // No nsec — can't publish, just show as RSVPed locally
+        setRsvped(true)
+        cacheRsvp(event.id, ticketId)
+        setTicketReady(true)
+        setPublishing(false)
+        return
+      }
+
+      // Publish to Nostr FIRST — source of truth
+      const skBytes = nsecToBytes(nsec)
+      const pool = getPool()
+      const nostrEvent = finalizeEvent({
+        kind: 1,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['t', 'bitsavers'], ['t', 'bitsavers-rsvp'], ['t', event.id]],
+        content: 'RSVP:' + JSON.stringify({ eventId: event.id, ticketId, npub, timestamp: Date.now() }),
+      }, skBytes)
+
+      await Promise.any(pool.publish(RELAYS, nostrEvent))
+
+      // Only after Nostr confirms — cache locally and unlock download
+      cacheRsvp(event.id, ticketId)
+      setRsvped(true)
+      setTicketReady(true)
+
+    } catch (e) {
+      console.error('RSVP publish failed', e)
+      setPublishError(true)
+      // Still mark RSVPed locally so UI doesn't confuse user
+      const npub = localStorage.getItem('bitsavers_npub') || ''
+      const ticketId = generateTicketId(npub, event.id)
+      cacheRsvp(event.id, ticketId)
+      setRsvped(true)
+      setTicketReady(true)
+    }
+
+    setPublishing(false)
+  }
+
+  const downloadTicket = async () => {
+    const npub = localStorage.getItem('bitsavers_npub') || ''
+    // Always regenerate deterministic ticketId — same result every time
+    const ticketId = generateTicketId(npub, event.id)
+    let profile = {}
+    try { profile = JSON.parse(localStorage.getItem('bitsavers_profile') || '{}') } catch {}
+    await generateTicket({ event, profile, npub, ticketId })
+  }
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${rsvped ? 'rgba(34,197,94,0.3)' : C.border}`, borderRadius: 16, marginBottom: 14, overflow: 'hidden', transition: 'border-color 0.3s' }}>
+      {/* Top accent bar if RSVPed */}
+      {rsvped && <div style={{ height: 3, background: 'linear-gradient(90deg,#22c55e,#16a34a)', width: '100%' }} />}
+
+      {/* Cover image */}
+      {event.imageUrl && (
+        <img src={event.imageUrl} alt={event.title} style={{ width: '100%', display: 'block', borderRadius: '16px 16px 0 0' }} />
+      )}
+
+      <div style={{ padding: 18 }}>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 14 }}>
+          {/* Date block */}
+          <div style={{ background: isPast ? 'rgba(255,255,255,0.04)' : C.dim, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 14px', textAlign: 'center', flexShrink: 0, minWidth: 56 }}>
+            <div style={{ fontSize: 10, color: C.accent, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
+              {new Date(event.date).toLocaleString('en', { month: 'short' })}
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 900, color: isPast ? C.muted : C.text, lineHeight: 1 }}>
+              {new Date(event.date).getDate()}
+            </div>
+            <div style={{ fontSize: 10, color: C.muted }}>
+              {new Date(event.date).toLocaleString('en', { weekday: 'short' })}
+            </div>
+          </div>
+
+          {/* Info */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: isPast ? C.muted : C.text, lineHeight: 1.3 }}>{event.title}</div>
+              {isPast && <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, background: 'rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: 20, flexShrink: 0 }}>PAST</span>}
+            </div>
+            {event.instructor && (
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>by {event.instructor}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Meta row */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: event.description ? 10 : 14 }}>
+          {event.time && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.accent }}>
+              <Clock size={12} /> {event.time}
+            </div>
+          )}
+          {event.location && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted }}>
+              <MapPin size={12} /> {event.location}
+            </div>
+          )}
+        </div>
+
+        {event.description && (
+          <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 14 }}>{event.description}</div>
+        )}
+
+        {/* Action buttons */}
+        {!isPast && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {/* RSVP button */}
+              <button
+                onClick={rsvped ? undefined : toggleRsvp}
+                disabled={publishing}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 11, fontWeight: 800, fontSize: 14,
+                  cursor: rsvped ? 'default' : publishing ? 'not-allowed' : 'pointer',
+                  background: rsvped ? 'rgba(34,197,94,0.15)' : C.accent,
+                  color: rsvped ? C.green : '#000',
+                  border: rsvped ? '1px solid rgba(34,197,94,0.4)' : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  transform: animate ? 'scale(1.04)' : 'scale(1)', transition: 'all 0.2s',
+                  opacity: publishing ? 0.7 : 1,
+                  userSelect: 'none',
+                }}>
+                {publishing ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={15} fill={rsvped ? C.green : 'none'} />}
+                {publishing ? 'Registering…' : rsvped ? "You're going!" : 'RSVP'}
+              </button>
+
+              {/* Join/Link button */}
+              {event.link && (
+                <a href={event.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                  <button style={{ padding: '12px 18px', borderRadius: 11, fontWeight: 700, fontSize: 13, cursor: 'pointer', background: C.dim, border: `1px solid ${C.border}`, color: C.accent, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    Join
+                  </button>
+                </a>
+              )}
+            </div>
+
+            {/* Download ticket button — shows after RSVP */}
+            {ticketReady && (
+              <button onClick={downloadTicket} style={{ width: '100%', padding: '11px', borderRadius: 11, fontWeight: 700, fontSize: 13, cursor: 'pointer', background: 'rgba(247,147,26,0.08)', border: `1px solid rgba(247,147,26,0.3)`, color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <Download size={14} /> Download Ticket
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Past event — just show link */}
+        {isPast && event.link && (
+          <a href={event.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+            <button style={{ width: '100%', padding: '10px', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer', background: C.dim, border: `1px solid ${C.border}`, color: C.muted }}>
+              View Recording / Details
+            </button>
+          </a>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export default function NewsPage() {
@@ -144,8 +363,11 @@ export default function NewsPage() {
         <>
           {loading && (
             <div style={{ textAlign: 'center', padding: '50px 0', color: C.muted }}>
-              <Loader size={18} style={{ animation: 'spin 1s linear infinite', color: C.accent, display: 'inline-block' }} />
-              <div style={{ marginTop: 10, fontSize: 13 }}>Fetching announcements…</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 8 }}>
+                <Loader size={18} style={{ animation: 'spin 1s linear infinite', color: C.accent }} />
+                <span style={{ fontSize: 14 }}>Connecting to Nostr relays…</span>
+              </div>
+              <div style={{ fontSize: 11, fontFamily: 'monospace', color: C.muted }}>wss://relay.damus.io + 2 more</div>
             </div>
           )}
           {!loading && news.length === 0 && (
@@ -162,7 +384,7 @@ export default function NewsPage() {
             return (
               <div key={item.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, marginBottom: 14, overflow: 'hidden' }}>
                 {imgMatch && (
-                  <img src={imgMatch[0]} alt="" style={{ width: '100%', maxHeight: 200, objectFit: 'cover', display: 'block' }} onError={e => e.target.style.display='none'} />
+                  <img src={imgMatch[0]} alt="" style={{ width: '100%', display: 'block' }} onError={e => e.target.style.display='none'} />
                 )}
                 <div style={{ padding: 20 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -189,29 +411,7 @@ export default function NewsPage() {
             </div>
           )}
           {events.sort((a,b) => new Date(a.date) - new Date(b.date)).map(event => (
-            <div key={event.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, marginBottom: 14 }}>
-              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                <div style={{ background: C.dim, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px', textAlign: 'center', flexShrink: 0, minWidth: 54 }}>
-                  <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, textTransform: 'uppercase' }}>
-                    {new Date(event.date).toLocaleString('en', { month: 'short' })}
-                  </div>
-                  <div style={{ fontSize: 24, fontWeight: 900, color: C.text, lineHeight: 1 }}>
-                    {new Date(event.date).getDate()}
-                  </div>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 4 }}>{event.title}</div>
-                  {event.instructor && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>Instructor: {event.instructor}</div>}
-                  {event.time && <div style={{ fontSize: 12, color: C.accent, fontFamily: 'monospace', marginBottom: 6 }}>{event.time}</div>}
-                  {event.description && <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, marginBottom: 8 }}>{event.description}</div>}
-                  {event.link && (
-                    <a href={event.link} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', background: C.accent, color: C.bg, padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
-                      Join Event
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
+            <EventCard key={event.id} event={event} />
           ))}
         </>
       )}

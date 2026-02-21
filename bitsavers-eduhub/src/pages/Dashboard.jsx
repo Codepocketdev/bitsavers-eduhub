@@ -505,6 +505,10 @@ function NostrFeed({ user, onProfileClick }) {
             c.startsWith('GALLERY:') ||
             c.startsWith('FOLLOWING:') ||
             c.startsWith('COURSES:') ||
+            c.startsWith('RSVP:') ||
+            c.startsWith('VERIFY:') ||
+            c.startsWith('RSVP:') ||
+            c.startsWith('VERIFY:') ||
             c.includes('DATA:{')) return
         cache.seenIds.add(event.id)
 
