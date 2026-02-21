@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { Menu, X, BookOpen, MessageSquare, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp, MessageCircle } from 'lucide-react'
+import { Menu, X, BookOpen, MessageSquare, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp, MessageCircle, Video } from 'lucide-react'
 import { SimplePool } from 'nostr-tools/pool'
 import { publishProfile, fetchProfile } from '../lib/nostr'
 import ImageUpload from '../components/ImageUpload'
@@ -15,6 +15,7 @@ import BlogPage from './BlogPage'
 import ProfileModal from './ProfileModal'
 import MessagesPage from './MessagesPage'
 import SponsorsPage from './SponsorsPage'
+import LiveClassesPage from './LiveClassesPage'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 
@@ -701,6 +702,7 @@ const NAV = [
   { id: 'cohorts',   icon: <Users size={18} />,      label: 'Cohorts' },
   { id: 'assessments', icon: <BookOpen size={18} />,  label: 'Assessments' },
   { id: 'courses',   icon: <BookOpen size={18} />,   label: 'Courses' },
+  { id: 'liveclasses', icon: <Video size={18} />,      label: 'Live Classes' },
   { id: 'pow',       icon: <TrendingUp size={18} />, label: 'Proof of Work' },
   { id: 'donate',    icon: <Zap size={18} />,        label: 'Donate' },
   { id: 'profile',   icon: <User size={18} />,       label: 'My Profile' },
@@ -913,6 +915,7 @@ export default function Dashboard() {
         {page === 'cohorts'   && <CohortsPage user={user} onProfileClick={openProfile} />}
         {page === 'assessments' && <AssessmentsPage user={user} />}
         {page === 'courses'   && <Placeholder title="Courses" sub="Bitcoin courses coming soon!" />}
+        {page === 'liveclasses' && <LiveClassesPage />}
         {page === 'pow'       && <PowPage />}
         {page === 'donate'    && <DonatePage />}
         {selectedProfile && (
