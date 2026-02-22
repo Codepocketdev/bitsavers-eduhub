@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { SimplePool } from 'nostr-tools/pool'
 import { nip19 } from 'nostr-tools'
 import { nsecToBytes } from '../lib/nostr'
-import { finalizeEvent } from 'nostr-tools/pure'
+import { finalizeEvent, getPublicKey } from 'nostr-tools/pure'
 import { generateTicket, generateTicketId } from './ticketGenerator'
 import { Loader, Calendar, Newspaper, AlertCircle, CheckCircle, MapPin, Clock, Users, Download, Ticket } from 'lucide-react'
 
@@ -52,8 +52,54 @@ function EventCard({ event }) {
   const [publishing, setPublishing] = useState(false)
   const [ticketReady, setTicketReady] = useState(isRsvped(event.id))
   const [publishError, setPublishError] = useState(false)
+  const [checkingNostr, setCheckingNostr] = useState(!isRsvped(event.id)) // only check if not cached
 
   const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
+
+  // ── On mount: check Nostr for existing RSVP — localStorage is just a cache ──
+  useEffect(() => {
+    if (isRsvped(event.id)) { setCheckingNostr(false); return } // already cached, skip
+
+    const nsec = localStorage.getItem('bitsavers_nsec')
+    if (!nsec) { setCheckingNostr(false); return } // no key, can't check
+
+    let pubkey = ''
+    try {
+      const skBytes = nsecToBytes(nsec)
+      pubkey = getPublicKey(skBytes)
+    } catch { setCheckingNostr(false); return }
+
+    const pool = new SimplePool()
+    const sub = pool.subscribe(RELAYS, {
+      kinds: [1],
+      authors: [pubkey],
+      '#t': ['bitsavers-rsvp', event.id],
+      limit: 5,
+    }, {
+      onevent(e) {
+        try {
+          const data = JSON.parse(e.content.slice('RSVP:'.length))
+          if (data.eventId === event.id) {
+            // Found existing RSVP on Nostr — restore lock + ticket
+            const npub = nip19.npubEncode(pubkey)
+            const ticketId = generateTicketId(npub, event.id)
+            cacheRsvp(event.id, ticketId)
+            setRsvped(true)
+            setTicketReady(true)
+            setCheckingNostr(false)
+            sub.close()
+          }
+        } catch {}
+      },
+      oneose() {
+        setCheckingNostr(false)
+        sub.close()
+      }
+    })
+    setTimeout(() => { sub.close(); setCheckingNostr(false) }, 6000)
+
+    return () => sub.close()
+  }, [event.id])
 
   const toggleRsvp = async () => {
     const next = !rsvped
@@ -69,7 +115,15 @@ function EventCard({ event }) {
 
     try {
       const nsec = localStorage.getItem('bitsavers_nsec')
-      const npub = localStorage.getItem('bitsavers_npub') || ''
+      // Derive npub directly from nsec — never use localStorage npub which may be missing
+      let npub = localStorage.getItem('bitsavers_npub') || ''
+      if (nsec && !npub) {
+        try {
+          const skBytes = nsecToBytes(nsec)
+          const pubkey = getPublicKey(skBytes)
+          npub = nip19.npubEncode(pubkey)
+        } catch {}
+      }
 
       // Deterministic ticketId — same npub+eventId always = same ticket, no Date.now()
       const ticketId = generateTicketId(npub, event.id)
@@ -111,8 +165,11 @@ function EventCard({ event }) {
       console.error('RSVP publish failed', e)
       setPublishError(true)
       // Still mark RSVPed locally so UI doesn't confuse user
-      const npub = localStorage.getItem('bitsavers_npub') || ''
-      const ticketId = generateTicketId(npub, event.id)
+      let npub2 = localStorage.getItem('bitsavers_npub') || ''
+      if (!npub2 && nsec) {
+        try { const sk = nsecToBytes(nsec); npub2 = nip19.npubEncode(getPublicKey(sk)) } catch {}
+      }
+      const ticketId = generateTicketId(npub2, event.id)
       cacheRsvp(event.id, ticketId)
       setRsvped(true)
       setTicketReady(true)
@@ -122,8 +179,17 @@ function EventCard({ event }) {
   }
 
   const downloadTicket = async () => {
-    const npub = localStorage.getItem('bitsavers_npub') || ''
-    // Always regenerate deterministic ticketId — same result every time
+    // Always derive npub from nsec — source of truth, never localStorage
+    const nsec = localStorage.getItem('bitsavers_nsec')
+    let npub = ''
+    try {
+      const skBytes = nsecToBytes(nsec)
+      const pubkey = getPublicKey(skBytes)
+      npub = nip19.npubEncode(pubkey)
+    } catch {
+      // fallback to localStorage if nsec missing
+      npub = localStorage.getItem('bitsavers_npub') || ''
+    }
     const ticketId = generateTicketId(npub, event.id)
     let profile = {}
     try { profile = JSON.parse(localStorage.getItem('bitsavers_profile') || '{}') } catch {}
@@ -191,21 +257,25 @@ function EventCard({ event }) {
             <div style={{ display: 'flex', gap: 10 }}>
               {/* RSVP button */}
               <button
-                onClick={rsvped ? undefined : toggleRsvp}
-                disabled={publishing}
+                onClick={rsvped || checkingNostr ? undefined : toggleRsvp}
+                disabled={publishing || checkingNostr}
                 style={{
                   flex: 1, padding: '12px', borderRadius: 11, fontWeight: 800, fontSize: 14,
-                  cursor: rsvped ? 'default' : publishing ? 'not-allowed' : 'pointer',
-                  background: rsvped ? 'rgba(34,197,94,0.15)' : C.accent,
-                  color: rsvped ? C.green : '#000',
-                  border: rsvped ? '1px solid rgba(34,197,94,0.4)' : 'none',
+                  cursor: rsvped ? 'default' : (publishing || checkingNostr) ? 'not-allowed' : 'pointer',
+                  background: rsvped ? 'rgba(34,197,94,0.15)' : checkingNostr ? C.dim : C.accent,
+                  color: rsvped ? C.green : checkingNostr ? C.muted : '#000',
+                  border: rsvped ? '1px solid rgba(34,197,94,0.4)' : checkingNostr ? `1px solid ${C.border}` : 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   transform: animate ? 'scale(1.04)' : 'scale(1)', transition: 'all 0.2s',
                   opacity: publishing ? 0.7 : 1,
                   userSelect: 'none',
                 }}>
-                {publishing ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={15} fill={rsvped ? C.green : 'none'} />}
-                {publishing ? 'Registering…' : rsvped ? "You're going!" : 'RSVP'}
+                {checkingNostr
+                  ? <><Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Checking…</>
+                  : publishing
+                    ? <><Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Registering…</>
+                    : <><CheckCircle size={15} fill={rsvped ? C.green : 'none'} /> {rsvped ? "You're going!" : 'RSVP'}</>
+                }
               </button>
 
               {/* Join/Link button */}

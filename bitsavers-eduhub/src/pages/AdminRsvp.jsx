@@ -3,8 +3,9 @@ import { SimplePool } from 'nostr-tools/pool'
 import { nip19 } from 'nostr-tools'
 import { getPool, nsecToBytes } from '../lib/nostr'
 import { finalizeEvent } from 'nostr-tools/pure'
-import { Users, CheckCircle, Clock, QrCode, X, ChevronDown, ChevronUp, Download, Search, Calendar, AlertTriangle, XCircle, Loader, FileDown } from 'lucide-react'
+import { Users, CheckCircle, Clock, QrCode, X, ChevronDown, ChevronUp, Download, Search, Calendar, AlertTriangle, XCircle, Loader, FileDown, Ticket } from 'lucide-react'
 import TicketScanner from './TicketScanner'
+import { generateTicketId } from './ticketGenerator'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 const C = {
@@ -106,89 +107,83 @@ export default function AdminRsvp() {
     setTimeout(() => { sub.close(); setLoading(false) }, 10000)
   }
 
-  const verifyTicket = async (scannedData) => {
+  const verifyTicket = (scannedData) => {
     setShowScanner(false)
 
     if (!scannedData.startsWith('bitsavers-ticket:')) {
-      setScanResult({ status: 'invalid', msg: 'Not a valid BitSavers ticket' })
-      return
+      setScanResult({ status: 'invalid', msg: 'Not a valid BitSavers ticket' }); return
     }
 
+    // QR format: bitsavers-ticket:eventId:npub:ticketId
     const parts = scannedData.split(':')
-    if (parts.length < 4) { setScanResult({ status: 'invalid', msg: 'Malformed ticket' }); return }
-
+    if (parts.length < 4) {
+      setScanResult({ status: 'invalid', msg: 'Malformed ticket' }); return
+    }
     const [, eventId, npub, ticketId] = parts
 
+    // 1. Wrong event?
     if (eventId !== selectedEvent?.id) {
-      setScanResult({ status: 'invalid', msg: 'Ticket is for a different event' })
-      return
+      setScanResult({ status: 'invalid', msg: `Ticket is for a different event` }); return
     }
 
-    // Fast path — already scanned today
-    if (verified[ticketId]) {
-      const att = rsvps.find(r => r.ticketId === ticketId) || {}
-      const profile = profiles[att.pubkey] || {}
-      setScanResult({ status: 'already', attendee: { name: profile.name || profile.display_name || npub.slice(0, 14) + '…', picture: profile.picture } })
-      return
-    }
-
-    // Show verifying state while we check Nostr
-    setScanResult({ status: 'verifying' })
-
-    // Verify against Nostr — Nostr is source of truth
-    // Ticket is only valid if npub actually published this ticketId to relay
-    let nostrVerified = false
-    let attendeeProfile = {}
-
-    try {
-      const pool = new SimplePool()
-      let pubkey = ''
-      try { pubkey = nip19.decode(npub).data } catch {}
-
-      if (pubkey) {
-        await new Promise((resolve) => {
-          const sub = pool.subscribe(RELAYS, {
-            kinds: [1],
-            authors: [pubkey],
-            '#t': ['bitsavers-rsvp', eventId],
-            limit: 10,
-          }, {
-            onevent(e) {
-              try {
-                const data = JSON.parse(e.content.slice('RSVP:'.length))
-                if (data.ticketId === ticketId && data.eventId === eventId) {
-                  nostrVerified = true
-                  attendeeProfile = profiles[pubkey] || {}
-                  sub.close()
-                  resolve()
-                }
-              } catch {}
-            },
-            oneose() { sub.close(); resolve() }
-          })
-          setTimeout(() => { sub.close(); resolve() }, 8000)
-        })
+    // 2. Old ticket — no npub in QR, try to recover from RSVP list by ticketId
+    if (!npub) {
+      const match = rsvps.find(r => {
+        const computed = r.npub ? generateTicketId(r.npub, eventId) : r.ticketId
+        return computed === ticketId || r.ticketId === ticketId
+      })
+      if (!match || !match.npub) {
+        setScanResult({ status: 'invalid', msg: 'Old ticket format — ask attendee to re-download their ticket' }); return
       }
-    } catch (e) { console.error('Nostr verify error', e) }
-
-    // Fallback to local RSVP list if relay was slow/offline
-    if (!nostrVerified) {
-      const localMatch = rsvps.find(r => r.ticketId === ticketId)
-      if (!localMatch) {
-        setScanResult({ status: 'invalid', msg: 'Ticket not found — not a valid RSVP' })
+      // Found — treat as if QR had the correct npub
+      const recovered = match.npub
+      let pubkey = ''; try { pubkey = nip19.decode(recovered).data } catch {}
+      if (verified[recovered]) {
+        const profile = profiles[pubkey] || {}
+        setScanResult({ status: 'already', attendee: { name: profile.name || profile.display_name || recovered.slice(0,14)+'…', picture: profile.picture } })
         return
       }
-      attendeeProfile = profiles[localMatch.pubkey] || {}
+      const profile = profiles[pubkey] || {}
+      const name = profile.name || profile.display_name || recovered.slice(0,16)+'…'
+      const newVerified = { ...verified, [recovered]: { time: Date.now(), npub: recovered, ticketId } }
+      setVerified(newVerified); saveVerified(newVerified)
+      setScanResult({ status: 'success', attendee: { name, picture: profile.picture } })
+      return
     }
 
-    const name = attendeeProfile.name || attendeeProfile.display_name || npub.slice(0, 16) + '…'
+    // 3. Already checked in?
+    if (verified[npub]) {
+      let pubkey = ''; try { pubkey = nip19.decode(npub).data } catch {}
+      const profile = profiles[pubkey] || {}
+      setScanResult({ status: 'already', attendee: { name: profile.name || profile.display_name || npub.slice(0,14)+'…', picture: profile.picture } })
+      return
+    }
 
-    // Mark verified locally
-    const newVerified = { ...verified, [ticketId]: { time: Date.now(), npub } }
+    // 4. Cryptographic check — recompute hash(npub + eventId)
+    //    If it matches what's on the QR, ticket is mathematically valid — no Nostr needed
+    const expectedId = generateTicketId(npub, eventId)
+    if (expectedId !== ticketId) {
+      setScanResult({ status: 'invalid', msg: 'Ticket is invalid or has been tampered with' }); return
+    }
+
+    // 5. Valid hash — find profile from RSVP list
+    let pubkey = ''; try { pubkey = nip19.decode(npub).data } catch {}
+    const rsvpMatch = rsvps.find(r => r.npub === npub || r.pubkey === pubkey)
+    const profile = profiles[pubkey] || {}
+    const name = profile.name || profile.display_name || npub.slice(0,16)+'…'
+
+    if (!rsvpMatch) {
+      // Valid ticket math but not in RSVP list — let admin decide
+      setScanResult({ status: 'no_rsvp', npub, profile, name, ticketId }); return
+    }
+
+    // 6. All good — mark attended
+    const newVerified = { ...verified, [npub]: { time: Date.now(), npub, ticketId } }
     setVerified(newVerified)
     saveVerified(newVerified)
+    setScanResult({ status: 'success', attendee: { name, picture: profile.picture } })
 
-    // Publish verify event to Nostr
+    // Publish verify to Nostr (fire and forget)
     try {
       const nsec = localStorage.getItem('bitsavers_nsec')
       if (nsec) {
@@ -200,12 +195,11 @@ export default function AdminRsvp() {
           tags: [['t', 'bitsavers'], ['t', 'bitsavers-verify'], ['t', selectedEvent.id]],
           content: 'VERIFY:' + JSON.stringify({ ticketId, npub, eventId: selectedEvent.id, time: Date.now() }),
         }, skBytes)
-        await Promise.any(pool.publish(RELAYS, ev))
+        Promise.any(pool.publish(RELAYS, ev)).catch(() => {})
       }
     } catch {}
-
-    setScanResult({ status: 'success', attendee: { name, picture: attendeeProfile.picture } })
   }
+
 
   const exportCsv = () => {
     const rows = [['Name', 'NIP05', 'npub', 'Ticket ID', 'RSVP Time', 'Status']]
@@ -213,7 +207,7 @@ export default function AdminRsvp() {
       const profile = profiles[r.pubkey] || {}
       const name = profile.name || profile.display_name || 'Unknown'
       const nip05 = profile.nip05 || ''
-      const status = verified[r.ticketId] ? 'Attended' : 'Pending'
+      const status = (verified[r.npub] || verified[r.ticketId]) ? 'Attended' : 'Pending'
       const time = new Date(r.timestamp * 1000).toLocaleString()
       // Derive npub from pubkey if not stored directly
       let npub = r.npub || ''
@@ -232,8 +226,8 @@ export default function AdminRsvp() {
     URL.revokeObjectURL(url)
   }
 
-  const attended = rsvps.filter(r => verified[r.ticketId])
-  const pending = rsvps.filter(r => !verified[r.ticketId])
+  const attended = rsvps.filter(r => verified[r.npub] || verified[r.ticketId])
+  const pending = rsvps.filter(r => !verified[r.npub] && !verified[r.ticketId])
   const filtered = rsvps.filter(r => {
     if (!search) return true
     const profile = profiles[r.pubkey] || {}
@@ -243,57 +237,57 @@ export default function AdminRsvp() {
 
   // ── Scanner result modal
   if (scanResult) return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: 30, width: '100%', maxWidth: 380, textAlign: 'center' }}>
-        {scanResult.status === 'success' && (
-          <>
-            <div style={{ display:"flex", justifyContent:"center", marginBottom: 16 }}><CheckCircle size={64} color={C.green} /></div>
-            {scanResult.attendee?.picture && <img src={scanResult.attendee.picture} style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', margin: '0 auto 14px', display: 'block', border: `3px solid ${C.green}` }} />}
-            <div style={{ fontSize: 22, fontWeight: 900, color: C.green, marginBottom: 6 }}>Valid Ticket!</div>
-            <div style={{ fontSize: 16, color: C.text, fontWeight: 700, marginBottom: 4 }}>{scanResult.attendee?.name}</div>
-            <div style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>Marked as ATTENDED</div>
-          </>
-        )}
-        {scanResult.status === 'already' && (
-          <>
-            <div style={{ display:"flex", justifyContent:"center", marginBottom: 16 }}><AlertTriangle size={64} color={C.yellow} /></div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: C.yellow, marginBottom: 6 }}>Already Checked In</div>
-            <div style={{ fontSize: 14, color: C.text, marginBottom: 4 }}>{scanResult.attendee?.name}</div>
-            <div style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>This ticket was already scanned</div>
-          </>
-        )}
-        {scanResult.status === 'verifying' && (
-          <>
-            <div style={{ display:'flex', justifyContent:'center', marginBottom: 16 }}>
-              <Loader size={48} color={C.accent} style={{ animation: 'spin 1s linear infinite' }} />
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 6 }}>Verifying on Nostr…</div>
-            <div style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>Checking ticket against relay</div>
-            <style>{String.raw`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-          </>
-        )}
-        {scanResult.status === 'verifying' && (
-          <>
-            <div style={{ display:'flex', justifyContent:'center', marginBottom: 20 }}>
-              <Loader size={52} color={C.accent} style={{ animation: 'spin 1s linear infinite' }} />
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 6 }}>Verifying on Nostr…</div>
-            <div style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>Checking ticket against relay</div>
-            <style>{String.raw`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-          </>
-        )}
-        {scanResult.status === 'invalid' && (
-          <>
-            <div style={{ display:"flex", justifyContent:"center", marginBottom: 16 }}><XCircle size={64} color={C.red} /></div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: C.red, marginBottom: 8 }}>Invalid Ticket</div>
-            <div style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>{scanResult.msg}</div>
-          </>
-        )}
-        {scanResult.status !== 'verifying' && (
-          <button onClick={() => setScanResult(null)} style={{ width: '100%', background: C.accent, border: 'none', color: '#000', padding: '14px', borderRadius: 12, fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>
-            Scan Next
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: C.card, border: `1px solid ${
+        scanResult.status === 'success' ? 'rgba(34,197,94,0.4)' :
+        scanResult.status === 'already' ? 'rgba(139,92,246,0.4)' :
+        scanResult.status === 'no_rsvp' ? 'rgba(234,179,8,0.4)' :
+        'rgba(239,68,68,0.4)'
+      }`, borderRadius: 20, padding: 30, width: '100%', maxWidth: 380, textAlign: 'center' }}>
+
+        {/* ── SUCCESS ── */}
+        {scanResult.status === 'success' && (<>
+          <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><CheckCircle size={56} color={C.green} /></div>
+          {scanResult.attendee?.picture && <img src={scanResult.attendee.picture} style={{ width: 68, height: 68, borderRadius: '50%', objectFit: 'cover', margin: '0 auto 10px', display: 'block', border: `3px solid ${C.green}` }} />}
+          <div style={{ fontSize: 22, fontWeight: 900, color: C.green, marginBottom: 4 }}>Welcome In! ✓</div>
+          <div style={{ fontSize: 16, color: C.text, fontWeight: 700, marginBottom: 2 }}>{scanResult.attendee?.name}</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>Marked as ATTENDED</div>
+        </>)}
+
+        {/* ── ALREADY CHECKED IN ── */}
+        {scanResult.status === 'already' && (<>
+          <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><AlertTriangle size={56} color="#a78bfa" /></div>
+          {scanResult.attendee?.picture && <img src={scanResult.attendee.picture} style={{ width: 68, height: 68, borderRadius: '50%', objectFit: 'cover', margin: '0 auto 10px', display: 'block', border: '3px solid #a78bfa' }} />}
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#a78bfa', marginBottom: 4 }}>Already Checked In</div>
+          <div style={{ fontSize: 15, color: C.text, fontWeight: 700, marginBottom: 2 }}>{scanResult.attendee?.name}</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>This person is already inside</div>
+        </>)}
+
+        {/* ── NO RSVP — valid ticket but not on list ── */}
+        {scanResult.status === 'no_rsvp' && (<>
+          <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><AlertTriangle size={56} color="#eab308" /></div>
+          {scanResult.profile?.picture && <img src={scanResult.profile.picture} style={{ width: 68, height: 68, borderRadius: '50%', objectFit: 'cover', margin: '0 auto 10px', display: 'block', border: '3px solid #eab308' }} />}
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#eab308', marginBottom: 4 }}>Valid Ticket — No RSVP</div>
+          <div style={{ fontSize: 15, color: C.text, fontWeight: 700, marginBottom: 2 }}>{scanResult.name}</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>Ticket is mathematically valid but no RSVP found on Nostr. Relay may not have synced.</div>
+          <button onClick={() => {
+            const newVerified = { ...verified, [scanResult.npub]: { time: Date.now(), npub: scanResult.npub, ticketId: scanResult.ticketId } }
+            setVerified(newVerified); saveVerified(newVerified); setScanResult(null)
+          }} style={{ width: '100%', background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.4)', color: C.green, padding: '12px', borderRadius: 11, fontWeight: 800, fontSize: 14, cursor: 'pointer', marginBottom: 8 }}>
+            Override — Let In
           </button>
-        )}
+        </>)}
+
+        {/* ── INVALID ── */}
+        {scanResult.status === 'invalid' && (<>
+          <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><XCircle size={56} color="#ef4444" /></div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444', marginBottom: 8 }}>Invalid Ticket</div>
+          <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>{scanResult.msg}</div>
+        </>)}
+
+        <button onClick={() => setScanResult(null)} style={{ width: '100%', background: C.accent, border: 'none', color: '#000', padding: '14px', borderRadius: 12, fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>
+          Scan Next
+        </button>
       </div>
     </div>
   )
@@ -393,29 +387,49 @@ export default function AdminRsvp() {
 
       {filtered.map(r => {
         const profile = profiles[r.pubkey] || {}
-        const isAttended = verified[r.ticketId]
+        // Verified by npub — unique per person, no collision
+        const computedTicketId = r.npub && selectedEvent?.id
+          ? generateTicketId(r.npub, selectedEvent.id)
+          : r.ticketId
+        const isAttended = verified[r.npub] || verified[computedTicketId]
         const name = profile.name || profile.display_name || (r.npub ? r.npub.slice(0, 16) + '…' : 'Unknown')
         return (
-          <div key={r.ticketId} style={{ background: C.card, border: `1px solid ${isAttended ? 'rgba(34,197,94,0.3)' : C.border}`, borderRadius: 12, padding: '12px 14px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Avatar profile={profile} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-              {profile.nip05 && <div style={{ fontSize: 11, color: C.accent }}>{profile.nip05}</div>}
-              <div style={{ fontSize: 11, color: C.muted }}>
-                {new Date(r.timestamp * 1000).toLocaleString()}
+          <div key={r.npub || r.ticketId} style={{ background: C.card, border: `1px solid ${isAttended ? 'rgba(34,197,94,0.3)' : C.border}`, borderRadius: 14, padding: 16, marginBottom: 10 }}>
+            {/* Header row — same as PostCard in live feed */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
+              <Avatar profile={profile} size={44} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{name}</span>
+                  {profile.nip05 && (
+                    <span style={{ fontSize: 11, color: C.accent, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <CheckCircle size={11} /> {profile.nip05}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                  {r.npub ? r.npub.slice(0, 10) + '…' + r.npub.slice(-4) : ''} · {new Date(r.timestamp * 1000).toLocaleString()}
+                </div>
+              </div>
+              {/* Attended / Pending badge */}
+              <div style={{ flexShrink: 0, alignSelf: 'flex-start' }}>
+                {isAttended ? (
+                  <span style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: C.green, padding: '5px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <CheckCircle size={11} /> Attended
+                  </span>
+                ) : (
+                  <span style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', color: C.yellow, padding: '5px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Clock size={11} /> Pending
+                  </span>
+                )}
               </div>
             </div>
-            <div style={{ flexShrink: 0 }}>
-              {isAttended ? (
-                <span style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: C.green, padding: '5px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <CheckCircle size={11} /> Attended
-                </span>
-              ) : (
-                <span style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', color: C.yellow, padding: '5px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Clock size={11} /> Pending
-                </span>
-              )}
-            </div>
+            {/* Ticket ID row */}
+            {computedTicketId && (
+              <div style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace', background: C.dim, padding: '4px 10px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Ticket size={11} />{computedTicketId}
+              </div>
+            )}
           </div>
         )
       })}
@@ -423,4 +437,4 @@ export default function AdminRsvp() {
     </div>
   )
 }
-
+	

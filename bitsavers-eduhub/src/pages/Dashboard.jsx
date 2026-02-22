@@ -17,6 +17,8 @@ import MessagesPage from './MessagesPage'
 import SponsorsPage from './SponsorsPage'
 import LiveClassesPage from './LiveClassesPage'
 import CoursesPage from './CoursesPage'
+import GroupsPage from './GroupsPage'
+import GroupFeedPage from './GroupFeedPage'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 
@@ -507,8 +509,17 @@ function NostrFeed({ user, onProfileClick }) {
             c.startsWith('COURSES:') ||
             c.startsWith('RSVP:') ||
             c.startsWith('VERIFY:') ||
-            c.startsWith('RSVP:') ||
-            c.startsWith('VERIFY:') ||
+            c.startsWith('EVENT:') ||
+            c.startsWith('EVENT_DELETE:') ||
+            c.startsWith('NEWS_DELETE:') ||
+            c.startsWith('GROUP:') ||
+            c.startsWith('GROUP_DELETE:') ||
+            c.startsWith('GROUP_JOIN:') ||
+            c.startsWith('GROUP_REQUEST:') ||
+            c.startsWith('GROUP_APPROVED:') ||
+            c.startsWith('GROUP_REJECTED:') ||
+            c.startsWith('GROUP_MEMBER:') ||
+            c.startsWith('GROUP_MEMBER_REMOVE:') ||
             c.includes('DATA:{')) return
         cache.seenIds.add(event.id)
 
@@ -821,6 +832,7 @@ const NAV = [
   { id: 'messages',  icon: <MessageCircle size={18} />, label: 'Messages' },
   { id: 'cohorts',   icon: <Users size={18} />,      label: 'Cohorts' },
   { id: 'assessments', icon: <BookOpen size={18} />,  label: 'Assessments' },
+  { id: 'groups',    icon: <Users size={18} />,      label: 'Communities' },
   { id: 'courses',   icon: <BookOpen size={18} />,   label: 'Courses' },
   { id: 'liveclasses', icon: <Video size={18} />,      label: 'Live Classes' },
   { id: 'pow',       icon: <TrendingUp size={18} />, label: 'Proof of Work' },
@@ -901,6 +913,7 @@ export default function Dashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedProfile, setSelectedProfile] = useState(null) // { pubkey, profile }
   const [dmPeer, setDmPeer] = useState(null)
+  const [activeGroup, setActiveGroup] = useState(null)
 
   const openProfile = (pubkey, profile = {}) => {
     if (!pubkey) return
@@ -1035,6 +1048,8 @@ export default function Dashboard() {
         {page === 'cohorts'   && <CohortsPage user={user} onProfileClick={openProfile} />}
         {page === 'assessments' && <AssessmentsPage user={user} />}
         {page === 'courses'   && <CoursesPage />}
+        {page === 'groups'    && !activeGroup && <GroupsPage user={user} onOpenGroup={(g) => setActiveGroup(g)} />}
+        {page === 'groups'    && activeGroup && null}
         {page === 'liveclasses' && <LiveClassesPage />}
         {page === 'pow'       && <PowPage />}
         {page === 'donate'    && <DonatePage />}
@@ -1053,6 +1068,13 @@ export default function Dashboard() {
         @keyframes livePulse { 0%,100%{opacity:1;box-shadow:0 0 6px #22c55e} 50%{opacity:.6;box-shadow:0 0 12px #22c55e} }
         @keyframes spin { to{transform:rotate(360deg)} }
       `}</style>
+
+      {/* ── Group Feed — true full screen, above everything ── */}
+      {page === 'groups' && activeGroup && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 300, background: '#080808', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <GroupFeedPage group={activeGroup} user={user} onBack={() => setActiveGroup(null)} />
+        </div>
+      )}
     </div>
   )
 }
