@@ -411,8 +411,37 @@ export default function NewsPage() {
             } catch {}
             return
           }
-          // Skip internal protocol notes
-          if (e.content.includes('DATA:{') || e.content.startsWith('DELETED:')) return
+          // Skip all internal protocol notes
+          const c = e.content
+          if (c.includes('DATA:{') ||
+              c.startsWith('DELETED:') ||
+              c.startsWith('RSVP:') ||
+              c.startsWith('VERIFY:') ||
+              c.startsWith('EVENT:') ||
+              c.startsWith('EVENT_DELETE:') ||
+              c.startsWith('NEWS_DELETE:') ||
+              c.startsWith('ASSESSMENT_CREATE:') ||
+              c.startsWith('ASSESSMENT_DELETE:') ||
+              c.startsWith('SUBMISSION:') ||
+              c.startsWith('PRESENCE_ONLINE:') ||
+              c.startsWith('PRESENCE_OFFLINE:') ||
+              c.startsWith('POW_BLOCK:') ||
+              c.startsWith('POW_DELETE:') ||
+              c.startsWith('BLOG_POST:') ||
+              c.startsWith('BLOG_DELETE:') ||
+              c.startsWith('SPONSORS:') ||
+              c.startsWith('GALLERY:') ||
+              c.startsWith('FOLLOWING:') ||
+              c.startsWith('COURSES:') ||
+              c.startsWith('SOCIALS:') ||
+              c.startsWith('GROUP:') ||
+              c.startsWith('GROUP_DELETE:') ||
+              c.startsWith('GROUP_REQUEST:') ||
+              c.startsWith('GROUP_APPROVED:') ||
+              c.startsWith('GROUP_REJECTED:') ||
+              c.startsWith('GROUP_MEMBER:') ||
+              c.startsWith('GROUP_MEMBER_REMOVE:') ||
+            c.startsWith('GROUP_STATE:')) return
           // Skip if this news ID was deleted
           if (deletedNews().includes(e.id)) return
           batch.push(e)

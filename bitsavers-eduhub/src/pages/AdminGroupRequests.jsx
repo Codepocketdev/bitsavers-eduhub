@@ -28,6 +28,23 @@ const publishGroup = async (groupData) => {
   } catch {}
 }
 
+// ── Single source of truth for user state ────────────────────────────────────
+const publishGroupState = async (groupId, userPubkeyHex, state, skBytes) => {
+  try {
+    const pool = getPool()
+    const ev = finalizeEvent({
+      kind: 1, created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['t', 'bitsavers'],
+        ['t', `bitsavers-group-state-${groupId}`],
+        ['p', userPubkeyHex],
+      ],
+      content: 'GROUP_STATE:' + JSON.stringify({ state, groupId }),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS, ev))
+  } catch {}
+}
+
 function Avatar({ profile = {}, size = 36 }) {
   const [err, setErr] = useState(false)
   const initials = (profile.name || '?').slice(0, 2).toUpperCase()
@@ -47,39 +64,85 @@ export default function AdminGroupRequests() {
     if (!privateGroups.length) { setLoading(false); return }
 
     const pool = new SimplePool()
-    const incoming = {}
+    const incoming = {}   // groupId → raw requests from Nostr
+    const stateMap = {}   // pubkey → { state, ts } latest GROUP_STATE per user
     let done = 0
+    // Each group fires 2 subs (requests + states), so total = privateGroups.length * 2
+    const TOTAL = privateGroups.length * 2
+
+    const maybeFinish = () => {
+      done++
+      if (done < TOTAL) return
+
+      // Filter: only show if latest GROUP_STATE is "pending" (or no state at all = old request)
+      const filtered = {}
+      privateGroups.forEach(g => {
+        filtered[g.id] = (incoming[g.id] || []).filter(r => {
+          const st = stateMap[`${g.id}:${r.pubkey}`]
+          if (!st) return true                    // no state event — old request, show it
+          if (st.state === 'pending') return true // explicitly pending — show
+          return false                            // member/removed/rejected — hide
+        })
+      })
+
+      setRequests(filtered)
+      setLoading(false)
+
+      // Fetch profiles for remaining requesters
+      const all = Object.values(filtered).flat().map(r => r.pubkey)
+      if (!all.length) return
+      const pSub = pool.subscribe(RELAYS, { kinds: [0], authors: all, limit: all.length }, {
+        onevent(e) { try { setProfiles(prev => ({ ...prev, [e.pubkey]: JSON.parse(e.content) })) } catch {} },
+        oneose() { pSub.close() }
+      })
+      setTimeout(() => pSub.close(), 6000)
+    }
 
     privateGroups.forEach(g => {
       incoming[g.id] = []
-      const approved = g.members || []
-      const sub = pool.subscribe(RELAYS, { kinds: [1], '#t': [`bitsavers-group-request-${g.id}`], limit: 200 }, {
+
+      // ── Sub 1: GROUP_REQUEST events — collect all requesters ──
+      const reqSub = pool.subscribe(RELAYS, {
+        kinds: [1], '#t': [`bitsavers-group-request-${g.id}`], limit: 200
+      }, {
         onevent(e) {
           if (!e.content.startsWith('GROUP_REQUEST:')) return
-          if (approved.includes(e.pubkey)) return
           try {
             const data = JSON.parse(e.content.slice('GROUP_REQUEST:'.length))
-            if (!incoming[g.id].find(r => r.pubkey === e.pubkey))
+            // Keep latest request per pubkey
+            const existing = incoming[g.id].find(r => r.pubkey === e.pubkey)
+            if (!existing) {
               incoming[g.id].push({ pubkey: e.pubkey, npub: data.npub || '', timestamp: e.created_at })
+            } else if (e.created_at > existing.timestamp) {
+              existing.timestamp = e.created_at
+            }
           } catch {}
         },
-        oneose() {
-          sub.close()
-          done++
-          if (done === privateGroups.length) {
-            setRequests({ ...incoming })
-            setLoading(false)
-            const all = Object.values(incoming).flat().map(r => r.pubkey)
-            if (!all.length) return
-            const pSub = pool.subscribe(RELAYS, { kinds: [0], authors: all, limit: all.length }, {
-              onevent(e) { try { setProfiles(prev => ({ ...prev, [e.pubkey]: JSON.parse(e.content) })) } catch {} },
-              oneose() { pSub.close() }
-            })
-            setTimeout(() => pSub.close(), 6000)
-          }
-        }
+        oneose() { reqSub.close(); maybeFinish() }
       })
-      setTimeout(() => { sub.close() }, 8000)
+      setTimeout(() => reqSub.close(), 8000)
+
+      // ── Sub 2: GROUP_STATE events — keyed by ['p'] tag = the subject user ──
+      const stateSub = pool.subscribe(RELAYS, {
+        kinds: [1], '#t': [`bitsavers-group-state-${g.id}`], limit: 500
+      }, {
+        onevent(e) {
+          if (!e.content.startsWith('GROUP_STATE:')) return
+          try {
+            const d = JSON.parse(e.content.slice('GROUP_STATE:'.length))
+            if (!d.state) return
+            // The ['p'] tag identifies WHO this state is about (not who signed it)
+            const subjectPubkey = e.tags.find(t => t[0] === 'p')?.[1]
+            if (!subjectPubkey) return
+            const key = `${g.id}:${subjectPubkey}`
+            if (!stateMap[key] || e.created_at > stateMap[key].ts) {
+              stateMap[key] = { state: d.state, ts: e.created_at }
+            }
+          } catch {}
+        },
+        oneose() { stateSub.close(); maybeFinish() }
+      })
+      setTimeout(() => stateSub.close(), 8000)
     })
   }, [])
 
@@ -92,16 +155,17 @@ export default function AdminGroupRequests() {
       try {
         const skBytes = nsecToBytes(nsec)
         const pool = getPool()
+        // GROUP_STATE:member — single source of truth
+        await publishGroupState(group.id, pubkey, 'member', skBytes)
+        // Keep GROUP_APPROVED for backward compat + GROUP_MEMBER for count
         const ev = finalizeEvent({
-          kind: 1, created_at: Math.floor(Date.now() / 1000),
+          kind: 1, created_at: Math.floor(Date.now() / 1000) + 1,
           tags: [['t', 'bitsavers'], ['t', `bitsavers-group-approved-${group.id}`], ['p', pubkey]],
           content: 'GROUP_APPROVED:' + JSON.stringify({ groupId: group.id, npub, pubkey }),
         }, skBytes)
         await Promise.any(pool.publish(RELAYS, ev))
-
-        // Also publish GROUP_MEMBER event so count is accurate (admin acting on behalf)
         const memberEv = finalizeEvent({
-          kind: 1, created_at: Math.floor(Date.now() / 1000) + 1,
+          kind: 1, created_at: Math.floor(Date.now() / 1000) + 2,
           tags: [['t', 'bitsavers'], ['t', `bitsavers-group-member-${group.id}`], ['p', pubkey]],
           content: 'GROUP_MEMBER:' + JSON.stringify({ groupId: group.id, npub, action: 'join', approvedBy: 'admin' }),
         }, skBytes)
@@ -118,20 +182,15 @@ export default function AdminGroupRequests() {
       try {
         const skBytes = nsecToBytes(nsec)
         const pool = getPool()
+        // GROUP_STATE:rejected — single source of truth
+        await publishGroupState(group.id, pubkey, 'rejected', skBytes)
+        // Keep GROUP_REJECTED for backward compat
         const ev = finalizeEvent({
-          kind: 1, created_at: Math.floor(Date.now() / 1000),
+          kind: 1, created_at: Math.floor(Date.now() / 1000) + 1,
           tags: [['t', 'bitsavers'], ['t', `bitsavers-group-rejected-${group.id}`], ['p', pubkey]],
           content: 'GROUP_REJECTED:' + JSON.stringify({ groupId: group.id, pubkey }),
         }, skBytes)
         await Promise.any(pool.publish(RELAYS, ev))
-
-        // Also publish GROUP_MEMBER event so count is accurate (admin acting on behalf)
-        const memberEv = finalizeEvent({
-          kind: 1, created_at: Math.floor(Date.now() / 1000) + 1,
-          tags: [['t', 'bitsavers'], ['t', `bitsavers-group-member-${group.id}`], ['p', pubkey]],
-          content: 'GROUP_MEMBER:' + JSON.stringify({ groupId: group.id, npub, action: 'join', approvedBy: 'admin' }),
-        }, skBytes)
-        await Promise.any(pool.publish(RELAYS, memberEv))
       } catch {}
     }
     setRequests(prev => ({ ...prev, [group.id]: (prev[group.id] || []).filter(r => r.pubkey !== pubkey) }))

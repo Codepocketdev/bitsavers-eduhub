@@ -1,10 +1,23 @@
 import { useState, useEffect } from 'react'
 import { SimplePool } from 'nostr-tools/pool'
+import { nip19 } from 'nostr-tools'
 import { getPool, nsecToBytes } from '../lib/nostr'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { Users, Globe, Lock, Search, CheckCircle, Loader, ArrowRight } from 'lucide-react'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
+
+// ── Trusted admin pubkeys — ONLY these can approve group membership ───────────
+const SUPER_ADMIN_HEX = (() => {
+  try { return nip19.decode('npub10w6ssxk09tz8use8nvw9ujfsl2katfzu6e5lnrdyrxq90xts5qtqj3kz4q').data } catch { return '' }
+})()
+const isTrustedAdmin = (eventPubkeyHex, group) => {
+  if (!eventPubkeyHex) return false
+  // Super admin always trusted
+  if (eventPubkeyHex === SUPER_ADMIN_HEX) return true
+  // Group-level admins stored as hex pubkeys
+  return (group?.admins || []).includes(eventPubkeyHex)
+}
 const C = {
   bg: '#080808', card: '#141414', border: 'rgba(247,147,26,0.18)',
   accent: '#F7931A', dim: 'rgba(247,147,26,0.12)', text: '#F0EBE0',
@@ -16,7 +29,22 @@ const getMemberships = () => { try { return JSON.parse(localStorage.getItem('bit
 const saveMemberships = (m) => localStorage.setItem('bitsavers_group_memberships', JSON.stringify(m))
 const getPending = () => { try { return JSON.parse(localStorage.getItem('bitsavers_group_pending') || '{}') } catch { return {} } }
 const savePending = (p) => localStorage.setItem('bitsavers_group_pending', JSON.stringify(p))
-const getCounts = () => { try { return JSON.parse(localStorage.getItem('bitsavers_group_counts') || '{}') } catch { return {} } }
+const getCounts = () => {
+  try {
+    const counts = JSON.parse(localStorage.getItem('bitsavers_group_counts') || '{}')
+    // Seed from per-group member cache written by GroupFeedPage so we show cached count immediately
+    const groups = JSON.parse(localStorage.getItem('bitsavers_groups') || '[]')
+    groups.forEach(g => {
+      if (counts[g.id] === undefined) {
+        try {
+          const cached = JSON.parse(localStorage.getItem(`bitsavers_gmembers_${g.id}`) || '[]')
+          if (cached.length) counts[g.id] = cached.length
+        } catch {}
+      }
+    })
+    return counts
+  } catch { return {} }
+}
 const saveCounts = (c) => localStorage.setItem('bitsavers_group_counts', JSON.stringify(c))
 
 // ── Module-level cache ────────────────────────────────────────────────────────
@@ -46,6 +74,26 @@ const publishMemberEvent = async (groupId, action = 'join') => {
   } catch (e) { console.error('publishMemberEvent failed', e) }
 }
 
+// ── Publish a single GROUP_STATE event — the source of truth for user status ──
+const publishGroupState = async (groupId, userPubkeyHex, state) => {
+  const nsec = localStorage.getItem('bitsavers_nsec')
+  if (!nsec) return
+  try {
+    const skBytes = nsecToBytes(nsec)
+    const pool = getPool()
+    const ev = finalizeEvent({
+      kind: 1, created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['t', 'bitsavers'],
+        ['t', `bitsavers-group-state-${groupId}`],
+        ['p', userPubkeyHex],
+      ],
+      content: 'GROUP_STATE:' + JSON.stringify({ state, groupId }),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS, ev))
+  } catch {}
+}
+
 export default function GroupsPage({ user, onOpenGroup }) {
   const [groups, setGroups] = useState(groupsCache.list)
   const [loading, setLoading] = useState(groupsCache.list.length === 0)
@@ -56,6 +104,7 @@ export default function GroupsPage({ user, onOpenGroup }) {
   const [codeInput, setCodeInput] = useState({})
   const [codeError, setCodeError] = useState({})
   const [joining, setJoining] = useState({})
+  const [verifying, setVerifying] = useState({}) // per-group Nostr confirmation in progress
 
   const myPubkey = user?.pubkey || ''
   const myNpub = localStorage.getItem('bitsavers_npub') || ''
@@ -126,131 +175,136 @@ export default function GroupsPage({ user, onOpenGroup }) {
     return () => sub.close()
   }, [])
 
-  // ── Verify my membership from Nostr on every load ───────────────────────────
+  // ── Verify state from Nostr — single GROUP_STATE query per group ────────────
   useEffect(() => {
     if (!myPubkey || !groups.length) return
     const pool = new SimplePool()
 
+    // Mark all groups as verifying
+    const verifyingNow = {}
     groups.forEach(g => {
-      // Super admin who created this group — always a member, skip verify
+      const creatorMap = window._bitsaversCreatorMap || {}
+      if (creatorMap[g.id] !== myPubkey) verifyingNow[g.id] = true
+    })
+    setVerifying(verifyingNow)
+
+    groups.forEach(g => {
+      // Creator is always a member
       const creatorMap = window._bitsaversCreatorMap || {}
       if (creatorMap[g.id] === myPubkey) {
-        const currentM = getMemberships()
-        if (!currentM[g.id]) {
-          currentM[g.id] = true
-          saveMemberships(currentM)
-          setMemberships(prev => ({ ...prev, [g.id]: true }))
-        }
-        return // no need to query Nostr for creator
+        const m = getMemberships()
+        if (!m[g.id]) { m[g.id] = true; saveMemberships(m); setMemberships(prev => ({ ...prev, [g.id]: true })) }
+        setVerifying(prev => { const n={...prev}; delete n[g.id]; return n })
+        return
       }
 
-      let myJoinTs = 0    // latest join timestamp for me
-      let myRemoveTs = 0  // latest remove timestamp for me
+      let latestTs = 0
+      let latestState = null
+      let latestPubkey = null
 
       pool.subscribe(RELAYS, {
         kinds: [1],
-        '#t': [`bitsavers-group-member-${g.id}`],
-        limit: 100,
+        '#t': [`bitsavers-group-state-${g.id}`],
+        '#p': [myPubkey],
+        limit: 50,
       }, {
         onevent(e) {
-          // My own join events
-          if (e.pubkey === myPubkey && e.content.startsWith('GROUP_MEMBER:')) {
-            try {
-              const d = JSON.parse(e.content.slice('GROUP_MEMBER:'.length))
-              if (d.action === 'join' && e.created_at > myJoinTs)
-                myJoinTs = e.created_at
-            } catch {}
-          }
-          // Admin remove events tagged with my pubkey
-          if (e.content.startsWith('GROUP_MEMBER_REMOVE:')) {
-            const pTag = e.tags?.find(t => t[0] === 'p' && t[1] === myPubkey)
-            if (pTag) {
-              try {
-                if (e.created_at > myRemoveTs) myRemoveTs = e.created_at
-              } catch {}
+          if (!e.content.startsWith('GROUP_STATE:')) return
+          // Confirm the ['p'] tag subject is actually me
+          const subjectPubkey = e.tags.find(t => t[0] === 'p')?.[1]
+          if (subjectPubkey !== myPubkey) return
+          // Only trust: my own events OR trusted admin events
+          const isOwnEvent = e.pubkey === myPubkey
+          const isAdminEvent = isTrustedAdmin(e.pubkey, g)
+          if (!isOwnEvent && !isAdminEvent) return
+          try {
+            const d = JSON.parse(e.content.slice('GROUP_STATE:'.length))
+            if (!d.state) return
+            if (e.created_at > latestTs ||
+               (e.created_at === latestTs && isAdminEvent)) {
+              latestTs = e.created_at
+              latestState = d.state
             }
-          }
+          } catch {}
         },
         oneose() {
-          // Decide once — latest event wins
-          const isMember = myJoinTs > 0 && (myRemoveTs === 0 || myJoinTs > myRemoveTs)
-          const wasRemoved = myRemoveTs > 0 && myRemoveTs >= myJoinTs
+          const m = getMemberships()
+          const p = getPending()
 
-          if (isMember) {
-            const currentM = getMemberships()
-            if (!currentM[g.id]) {
-              currentM[g.id] = true
-              saveMemberships(currentM)
-              setMemberships(prev => ({ ...prev, [g.id]: true }))
-            }
-          } else if (wasRemoved) {
-            const currentM = getMemberships()
-            if (currentM[g.id]) {
-              delete currentM[g.id]
-              saveMemberships(currentM)
-              setMemberships(prev => { const n = { ...prev }; delete n[g.id]; return n })
-            }
-            const currentP = getPending()
-            if (currentP[g.id]) {
-              delete currentP[g.id]
-              savePending(currentP)
-              setPending(prev => { const n = { ...prev }; delete n[g.id]; return n })
-            }
+          if (!latestState) {
+            // No state event on Nostr — leave cache as-is (relay miss protection)
+            setVerifying(prev => { const n={...prev}; delete n[g.id]; return n })
+            return
           }
-          // If neither — no join event found at all — leave localStorage state as-is
+
+          // Apply the latest confirmed state
+          if (latestState === 'member') {
+            m[g.id] = true; delete p[g.id]
+          } else if (latestState === 'pending') {
+            delete m[g.id]; p[g.id] = { requestTs: latestTs }
+          } else if (latestState === 'removed' || latestState === 'rejected') {
+            delete m[g.id]; delete p[g.id]
+          }
+
+          saveMemberships(m); setMemberships({ ...m })
+          savePending(p); setPending({ ...p })
+          setVerifying(prev => { const n={...prev}; delete n[g.id]; return n })
         }
       })
     })
 
-    // Check approvals for pending groups
-    const pendingGroups = Object.keys(getPending())
-    pendingGroups.forEach(groupId => {
-      pool.subscribe(RELAYS, {
-        kinds: [1], '#t': [`bitsavers-group-approved-${groupId}`], '#p': [myPubkey], limit: 5
-      }, {
-        onevent(e) {
-          if (!e.content.startsWith('GROUP_APPROVED:')) return
-          const newM = { ...getMemberships(), [groupId]: true }
-          setMemberships(newM); saveMemberships(newM)
-          const newP = getPending(); delete newP[groupId]
-          setPending({ ...newP }); savePending(newP)
-          // Publish member event so count is accurate
-          publishMemberEvent(groupId, 'join')
-        },
-        oneose() {}
-      })
-
-      // Rejections
-      pool.subscribe(RELAYS, {
-        kinds: [1], '#t': [`bitsavers-group-rejected-${groupId}`], '#p': [myPubkey], limit: 5
-      }, {
-        onevent(e) {
-          if (!e.content.startsWith('GROUP_REJECTED:')) return
-          const newP = getPending(); delete newP[groupId]
-          setPending({ ...newP }); savePending(newP)
-        },
-        oneose() {}
-      })
-    })
-
-    setTimeout(() => pool.destroy?.(), 10000)
+    setTimeout(() => pool.destroy?.(), 12000)
   }, [groups.length, myPubkey])
 
-  // ── Fetch member counts from Nostr ──────────────────────────────────────────
-  // Count = unique pubkeys with GROUP_MEMBER join events minus GROUP_MEMBER_REMOVE events
+  // ── Fetch member counts — GROUP_STATE wins, GROUP_MEMBER as fallback ─────────
   useEffect(() => {
     if (!groups.length) return
     const pool = new SimplePool()
 
     groups.forEach(g => {
-      // Seed from BOTH group.members[] AND resolved member cache (whichever has more)
       const joinTs = {}
       const removeTs = {}
-      ;(g.members || []).forEach(pk => { joinTs[pk] = 0 })
-      // Also seed from the resolved cache written by AdminGroupMembers/GroupFeedPage
-      const cachedMembers = (() => { try { return JSON.parse(localStorage.getItem(`bitsavers_gmembers_${g.id}`) || '[]') } catch { return [] } })()
-      cachedMembers.forEach(pk => { if (!joinTs[pk]) joinTs[pk] = 0 })
+      const stateMap = {} // pubkey → { state, ts }
+      let doneSubs = 0
 
+      const onBothDone = () => {
+        doneSubs++
+        if (doneSubs < 2) return
+        const allPks = new Set([...Object.keys(stateMap), ...Object.keys(joinTs)])
+        const count = [...allPks].filter(pk => {
+          const st = stateMap[pk]
+          if (st) return st.state === 'member'
+          return joinTs[pk] !== undefined && (!removeTs[pk] || joinTs[pk] > removeTs[pk])
+        }).length
+        // Only update if count changed — never overwrite cached count with 0
+        setMemberCounts(prev => {
+          if (count === 0 && (prev[g.id] || 0) > 0) return prev // keep cached, Nostr may still be loading
+          if (count === prev[g.id]) return prev // no change, skip re-render
+          const updated = { ...prev, [g.id]: count }
+          saveCounts(updated)
+          return updated
+        })
+      }
+
+      // ── Q1: GROUP_STATE events — definitive per-user state ──
+      pool.subscribe(RELAYS, {
+        kinds: [1], '#t': [`bitsavers-group-state-${g.id}`], limit: 500
+      }, {
+        onevent(e) {
+          if (!e.content.startsWith('GROUP_STATE:')) return
+          try {
+            const d = JSON.parse(e.content.slice('GROUP_STATE:'.length))
+            if (!d.state) return
+            const subjectPk = e.tags.find(t => t[0] === 'p')?.[1]
+            if (!subjectPk) return
+            if (!stateMap[subjectPk] || e.created_at > stateMap[subjectPk].ts)
+              stateMap[subjectPk] = { state: d.state, ts: e.created_at }
+          } catch {}
+        },
+        oneose() { onBothDone() }
+      })
+
+      // ── Q2: GROUP_MEMBER events — legacy fallback ──
       pool.subscribe(RELAYS, {
         kinds: [1], '#t': [`bitsavers-group-member-${g.id}`], limit: 500
       }, {
@@ -258,8 +312,9 @@ export default function GroupsPage({ user, onOpenGroup }) {
           if (e.content.startsWith('GROUP_MEMBER:')) {
             try {
               const d = JSON.parse(e.content.slice('GROUP_MEMBER:'.length))
-              if (d.action === 'join' && e.created_at > (joinTs[e.pubkey] || 0))
-                joinTs[e.pubkey] = e.created_at
+              const memberPk = d.pubkey || e.pubkey
+              if (d.action === 'join' && e.created_at > (joinTs[memberPk] || 0))
+                joinTs[memberPk] = e.created_at
             } catch {}
           } else if (e.content.startsWith('GROUP_MEMBER_REMOVE:')) {
             try {
@@ -269,16 +324,7 @@ export default function GroupsPage({ user, onOpenGroup }) {
             } catch {}
           }
         },
-        oneose() {
-          const count = Object.keys(joinTs).filter(pk =>
-            !removeTs[pk] || joinTs[pk] > removeTs[pk]
-          ).length
-          setMemberCounts(prev => {
-            const updated = { ...prev, [g.id]: count }
-            saveCounts(updated)
-            return updated
-          })
-        }
+        oneose() { onBothDone() }
       })
     })
 
@@ -288,10 +334,10 @@ export default function GroupsPage({ user, onOpenGroup }) {
   // ── Join public group ───────────────────────────────────────────────────────
   const joinPublic = async (group) => {
     setJoining(p => ({ ...p, [group.id]: true }))
-    await publishMemberEvent(group.id, 'join')
+    await publishGroupState(group.id, myPubkey, 'member')
+    await publishMemberEvent(group.id, 'join') // keep for member count
     const newM = { ...getMemberships(), [group.id]: true }
     setMemberships(newM); saveMemberships(newM)
-    // Bump count immediately
     setMemberCounts(prev => {
       const updated = { ...prev, [group.id]: (prev[group.id] || 0) + 1 }
       saveCounts(updated); return updated
@@ -307,15 +353,24 @@ export default function GroupsPage({ user, onOpenGroup }) {
       try {
         const skBytes = nsecToBytes(nsec)
         const pool = getPool()
+        // Publish GROUP_STATE:pending — single source of truth for user status
         const ev = finalizeEvent({
           kind: 1, created_at: Math.floor(Date.now() / 1000),
-          tags: [['t', 'bitsavers'], ['t', `bitsavers-group-request-${group.id}`]],
-          content: 'GROUP_REQUEST:' + JSON.stringify({ groupId: group.id, npub: myNpub }),
+          tags: [['t', 'bitsavers'], ['t', `bitsavers-group-state-${group.id}`], ['p', myPubkey]],
+          content: 'GROUP_STATE:' + JSON.stringify({ state: 'pending', groupId: group.id, npub: myNpub }),
         }, skBytes)
         await Promise.any(pool.publish(RELAYS, ev))
+        // Also publish old GROUP_REQUEST for AdminGroupRequests panel to pick up
+        const reqEv = finalizeEvent({
+          kind: 1, created_at: Math.floor(Date.now() / 1000),
+          tags: [['t', 'bitsavers'], ['t', `bitsavers-group-request-${group.id}`], ['p', myPubkey]],
+          content: 'GROUP_REQUEST:' + JSON.stringify({ groupId: group.id, npub: myNpub }),
+        }, skBytes)
+        await Promise.any(pool.publish(RELAYS, reqEv))
       } catch {}
     }
-    const newP = { ...getPending(), [group.id]: true }
+    const requestTs = Math.floor(Date.now() / 1000)
+    const newP = { ...getPending(), [group.id]: { requestTs } }
     setPending(newP); savePending(newP)
     setJoining(p => ({ ...p, [group.id]: false }))
   }
@@ -364,6 +419,7 @@ export default function GroupsPage({ user, onOpenGroup }) {
         const isMember = !!memberships[group.id]
         const isPending = !!pending[group.id]
         const isJoining = !!joining[group.id]
+        const isVerifying = !!verifying[group.id]
         const count = memberCounts[group.id] ?? (group.members || []).length
 
         return (
@@ -391,7 +447,15 @@ export default function GroupsPage({ user, onOpenGroup }) {
                 {count} member{count !== 1 ? 's' : ''}
               </div>
 
-              {/* ── Action button ── */}
+              {/* ── Verifying badge — shows while Nostr confirms, doesn't hide buttons ── */}
+              {isVerifying && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 11, color: C.muted }}>
+                  <Loader size={11} style={{ animation: 'spin 1s linear infinite', color: C.accent, flexShrink: 0 }} />
+                  Confirming with Nostr…
+                </div>
+              )}
+
+              {/* ── Action button — shows cached state immediately, updates when Nostr confirms ── */}
               {isMember ? (
                 <button onClick={() => onOpenGroup(group)}
                   style={{ width: '100%', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: C.green, padding: '13px', borderRadius: 11, fontWeight: 800, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>

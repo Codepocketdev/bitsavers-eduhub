@@ -65,6 +65,26 @@ function Input({ label, value, onChange, placeholder, type = 'text' }) {
   )
 }
 
+// ── Single source of truth for user state ────────────────────────────────────
+const publishGroupState = async (groupId, userPubkeyHex, state) => {
+  const nsec = localStorage.getItem('bitsavers_nsec')
+  if (!nsec) return
+  try {
+    const skBytes = nsecToBytes(nsec)
+    const pool = getPool()
+    const ev = finalizeEvent({
+      kind: 1, created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['t', 'bitsavers'],
+        ['t', `bitsavers-group-state-${groupId}`],
+        ['p', userPubkeyHex],
+      ],
+      content: 'GROUP_STATE:' + JSON.stringify({ state, groupId }),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS, ev))
+  } catch {}
+}
+
 function Avatar({ profile = {}, size = 36 }) {
   const [err, setErr] = useState(false)
   const initials = (profile.name || '?').slice(0, 2).toUpperCase()
@@ -84,18 +104,47 @@ function GroupsTab({ groups, setGroups }) {
   })
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
-  // Fetch accurate Nostr-based member counts including creator
+  // Fetch accurate member counts — GROUP_STATE wins, GROUP_MEMBER as fallback
   useEffect(() => {
     if (!groups.length) return
     const pool = new SimplePool()
     groups.forEach(g => {
-      const tag = g.isPrivate ? `bitsavers-group-approved-${g.id}` : `bitsavers-group-join-${g.id}`
-      const seen = new Set()
-      // Seed with group.members[] — timestamp 0 so any rejoin beats it
-      const joinTs = {}   // pubkey → latest join timestamp
-      const removeTs = {} // pubkey → latest remove timestamp
-      // Legacy members from group.members[] get timestamp 0 (oldest possible)
+      const joinTs = {}
+      const removeTs = {}
+      const stateMap = {}
+      let doneSubs = 0
       ;(g.members || []).forEach(pk => { joinTs[pk] = 0 })
+
+      const onBothDone = () => {
+        doneSubs++
+        if (doneSubs < 2) return
+        const allPks = new Set([...Object.keys(stateMap), ...Object.keys(joinTs)])
+        const count = [...allPks].filter(pk => {
+          const st = stateMap[pk]
+          if (st) return st.state === 'member'
+          return joinTs[pk] !== undefined && (!removeTs[pk] || joinTs[pk] > removeTs[pk])
+        }).length
+        setMemberCounts(prev => {
+          const updated = { ...prev, [g.id]: count }
+          localStorage.setItem('bitsavers_group_counts', JSON.stringify(updated))
+          return updated
+        })
+      }
+
+      pool.subscribe(RELAYS, { kinds: [1], '#t': [`bitsavers-group-state-${g.id}`], limit: 500 }, {
+        onevent(e) {
+          if (!e.content.startsWith('GROUP_STATE:')) return
+          try {
+            const d = JSON.parse(e.content.slice('GROUP_STATE:'.length))
+            if (!d.state) return
+            const subjectPk = e.tags.find(t => t[0] === 'p')?.[1]
+            if (!subjectPk) return
+            if (!stateMap[subjectPk] || e.created_at > stateMap[subjectPk].ts)
+              stateMap[subjectPk] = { state: d.state, ts: e.created_at }
+          } catch {}
+        },
+        oneose() { onBothDone() }
+      })
 
       pool.subscribe(RELAYS, { kinds: [1], '#t': [`bitsavers-group-member-${g.id}`], limit: 500 }, {
         onevent(e) {
@@ -113,17 +162,7 @@ function GroupsTab({ groups, setGroups }) {
             } catch {}
           }
         },
-        oneose() {
-          // Member if: has a join AND (no remove OR latest join is newer than latest remove)
-          const count = Object.keys(joinTs).filter(pk =>
-            !removeTs[pk] || joinTs[pk] > removeTs[pk]
-          ).length
-          setMemberCounts(prev => {
-            const updated = { ...prev, [g.id]: count }
-            localStorage.setItem('bitsavers_group_counts', JSON.stringify(updated))
-            return updated
-          })
-        }
+        oneose() { onBothDone() }
       })
     })
     setTimeout(() => pool.destroy?.(), 12000)
@@ -299,6 +338,22 @@ function MembersTab({ groups, setGroups }) {
     const updatedGroup = updated.find(g => g.id === selectedGroup.id)
     setSelectedGroup(updatedGroup)
     await publishGroup(updatedGroup)
+    // GROUP_STATE:removed — single source of truth, supersedes any member state
+    await publishGroupState(selectedGroup.id, pubkey, 'removed')
+    // Also publish GROUP_MEMBER_REMOVE for count tracking
+    const nsec = localStorage.getItem('bitsavers_nsec')
+    if (nsec) {
+      try {
+        const skBytes = nsecToBytes(nsec)
+        const pool = getPool()
+        const ev = finalizeEvent({
+          kind: 1, created_at: Math.floor(Date.now() / 1000) + 1,
+          tags: [['t', 'bitsavers'], ['t', `bitsavers-group-member-${selectedGroup.id}`], ['p', pubkey]],
+          content: 'GROUP_MEMBER_REMOVE:' + JSON.stringify({ groupId: selectedGroup.id, pubkey }),
+        }, skBytes)
+        await Promise.any(pool.publish(RELAYS, ev))
+      } catch {}
+    }
   }
 
   const toggleAdmin = async (pubkey) => {
