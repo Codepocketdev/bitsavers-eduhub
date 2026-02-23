@@ -383,7 +383,19 @@ function Inbox({ myPubkeyHex, onOpen }) {
     const closers = RELAYS.map(relay =>
       fetchDMsFromRelay(relay, myPubkeyHex, skBytes, filterSent, filterReceived, onEvent, onDone)
     )
-    return () => closers.forEach(c => c?.())
+
+    // ── Live subscription — keeps inbox updated without refresh ──
+    const now = Math.floor(Date.now() / 1000)
+    const liveSent     = { kinds: [4], authors: [myPubkeyHex], since: now }
+    const liveReceived = { kinds: [4], '#p': [myPubkeyHex], since: now }
+    const liveClosers = RELAYS.map(relay =>
+      subscribeLiveDMs(relay, myPubkeyHex, skBytes, liveSent, liveReceived, onEvent)
+    )
+
+    return () => {
+      closers.forEach(c => c?.())
+      liveClosers.forEach(c => c?.())
+    }
   }, [myPubkeyHex])
 
   // Fetch profiles — exact same pattern as live feed
