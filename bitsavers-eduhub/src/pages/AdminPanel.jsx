@@ -19,7 +19,7 @@ import AdminGroupRequests from './AdminGroupRequests'
 import AdminBlog from './AdminBlog'
 import AdminSponsors from './AdminSponsors'
 import AdminSocials from './AdminSocials'
-import { Users, Newspaper, Calendar, Image, Video, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle, Inbox, Hammer, Share2, BookOpen, Ticket } from 'lucide-react'
+import { Users, Newspaper, Calendar, Image, Video, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle, Inbox, Hammer, Share2, BookOpen, Ticket, MapPin, Clock, Link2, User, FileText, Hash } from 'lucide-react'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 
@@ -58,9 +58,9 @@ const Card = ({ children, style = {} }) => (
   </div>
 )
 
-const Input = ({ label, value, onChange, placeholder, type = 'text' }) => (
+const Input = ({ label, value, onChange, placeholder, type = 'text', icon }) => (
   <div style={{ marginBottom: 14 }}>
-    {label && <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, display: 'block', marginBottom: 6 }}>{label}</label>}
+    {label && <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>{icon && <span style={{display:'flex',alignItems:'center',color:C.accent}}>{icon}</span>}{label}</label>}
     <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
       style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 13px', color: C.text, fontSize: 14, outline: 'none' }} />
   </div>
@@ -327,7 +327,7 @@ const publishNewsDelete = async (newsId) => {
   } catch(e) { console.error('Failed to publish news delete:', e) }
 }
 
-const BLANK_EVENT_FORM = { title: '', instructor: '', date: '', time: '', description: '', link: '', imageUrl: '' }
+const BLANK_EVENT_FORM = { title: '', instructor: '', date: '', time: '', location: '', description: '', link: '', imageUrl: '' }
 
 function ManageEvents({ user }) {
   const [events, setEvents] = useState(() => {
@@ -376,6 +376,7 @@ function ManageEvents({ user }) {
       time: event.time || '',
       description: event.description || '',
       link: event.link || '',
+      location: event.location || '',
       imageUrl: event.imageUrl || '',
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -405,18 +406,19 @@ function ManageEvents({ user }) {
           {editingId ? 'Edit Event' : 'Add New Event'}
         </div>
 
-        <Input label="Event Title" value={form.title} onChange={v => set('title', v)} placeholder="e.g. Bitcoin Wallets Masterclass" />
-        <Input label="Instructor" value={form.instructor} onChange={v => set('instructor', v)} placeholder="e.g. Alex Wambui" />
+        <Input label="Event Title" icon={<Hash size={11}/>} value={form.title} onChange={v => set('title', v)} placeholder="e.g. Bitcoin Wallets Masterclass" />
+        <Input label="Instructor" icon={<User size={11}/>} value={form.instructor} onChange={v => set('instructor', v)} placeholder="e.g. Alex Wambui" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Input label="Date" value={form.date} onChange={v => set('date', v)} type="date" />
-          <Input label="Time" value={form.time} onChange={v => set('time', v)} type="time" />
+          <Input label="Date" icon={<Calendar size={11}/>} value={form.date} onChange={v => set('date', v)} type="date" />
+          <Input label="Time" icon={<Clock size={11}/>} value={form.time} onChange={v => set('time', v)} type="time" />
         </div>
+        <Input label="Venue / Location" icon={<MapPin size={11}/>} value={form.location} onChange={v => set('location', v)} placeholder="e.g. Nairobi Hub, Room 3" />
         <Textarea label="Description" value={form.description} onChange={v => set('description', v)} placeholder="What will be covered?" rows={3} />
-        <Input label="Join Link (optional)" value={form.link} onChange={v => set('link', v)} placeholder="https://meet.jit.si/..." />
+        <Input label="Join Link (optional)" icon={<Link2 size={11}/>} value={form.link} onChange={v => set('link', v)} placeholder="https://meet.jit.si/..." />
 
         {/* Cover image — same pattern as News */}
         <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, display: 'block', marginBottom: 10 }}>Cover Image (optional)</label>
+          <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}><span style={{display:'flex',alignItems:'center',color:C.accent}}><Image size={11}/></span>Cover Image (optional)</label>
           <ImageUpload currentUrl={form.imageUrl} onUploaded={url => set('imageUrl', url)} size={70} />
         </div>
 

@@ -156,6 +156,44 @@ function AvatarIcon({ picture, name, size = 40 }) {
   return <div style={{ width: size, height: size, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size*0.35, fontWeight: 700, color: '#000', flexShrink: 0 }}>{init}</div>
 }
 
+
+// ── Live subscription — keeps WebSocket open after EOSE for real-time DMs ────
+function subscribeLiveDMs(relayUrl, myPubkeyHex, skBytes, filter1, filter2, onEvent) {
+  let ws, closed = false, authed = false
+  const subId = 'dm-live-' + Math.random().toString(36).slice(2, 8)
+
+  const sendReq = () => ws.send(JSON.stringify(['REQ', subId, filter1, filter2]))
+  const sendAuth = (challenge) => {
+    const authEvent = finalizeEvent({
+      kind: 22242, created_at: Math.floor(Date.now()/1000),
+      tags: [['relay', relayUrl], ['challenge', challenge]], content: '',
+    }, skBytes)
+    ws.send(JSON.stringify(['AUTH', authEvent]))
+  }
+
+  const connect = () => {
+    if (closed) return
+    try {
+      ws = new WebSocket(relayUrl)
+      ws.onopen = () => { if (!closed) sendReq() }
+      ws.onmessage = ({ data }) => {
+        if (closed) return
+        let msg; try { msg = JSON.parse(data) } catch { return }
+        const [type, ...rest] = msg
+        if (type === 'AUTH') sendAuth(rest[0])
+        if (type === 'OK' && !authed) { authed = true; sendReq() }
+        if (type === 'EVENT' && rest[1]?.kind === 4) onEvent(rest[1])
+        // EOSE — intentionally NOT closing, stay alive for new messages
+      }
+      ws.onerror = () => {}
+      ws.onclose = () => { if (!closed) setTimeout(connect, 3000) } // reconnect
+    } catch {}
+  }
+
+  connect()
+  return () => { closed = true; try { ws?.close() } catch {} }
+}
+
 // ─── Thread (full WhatsApp-style conversation) ────────────────────────────────
 function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
   const [messages, setMessages] = useState([])
@@ -201,10 +239,23 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
     const filterSent     = { kinds: [4], authors: [myPubkeyHex], '#p': [peer], limit: 500 }
     const filterReceived = { kinds: [4], authors: [peer], '#p': [myPubkeyHex], limit: 500 }
 
+    // ── History fetch (closes after EOSE) ──
     const closers = RELAYS.map(relay =>
       fetchDMsFromRelay(relay, myPubkeyHex, skBytes, filterSent, filterReceived, onEvent, onDone)
     )
-    return () => closers.forEach(c => c?.())
+
+    // ── Live subscription — stays open, streams new messages in real-time ──
+    const now = Math.floor(Date.now() / 1000)
+    const liveFilterSent     = { kinds: [4], authors: [myPubkeyHex], '#p': [peer], since: now }
+    const liveFilterReceived = { kinds: [4], authors: [peer], '#p': [myPubkeyHex], since: now }
+    const liveClosers = RELAYS.map(relay =>
+      subscribeLiveDMs(relay, myPubkeyHex, skBytes, liveFilterSent, liveFilterReceived, onEvent)
+    )
+
+    return () => {
+      closers.forEach(c => c?.())
+      liveClosers.forEach(c => c?.())
+    }
   }, [myPubkeyHex, peer])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
@@ -228,6 +279,8 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
           }
         } catch {}
       })
+      // Mark as seen immediately so live sub skips it when relay echoes it back
+      seenRef.current.add(event.id)
       // Add sent message immediately to UI
       msgsRef.current = [...msgsRef.current, { id: event.id, text: text.trim(), isMine: true, ts: event.created_at }]
       setMessages([...msgsRef.current])

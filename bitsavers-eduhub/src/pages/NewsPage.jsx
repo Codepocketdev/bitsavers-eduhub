@@ -181,18 +181,38 @@ function EventCard({ event }) {
   const downloadTicket = async () => {
     // Always derive npub from nsec — source of truth, never localStorage
     const nsec = localStorage.getItem('bitsavers_nsec')
-    let npub = ''
+    let npub = '', pubkey = ''
     try {
       const skBytes = nsecToBytes(nsec)
-      const pubkey = getPublicKey(skBytes)
+      pubkey = getPublicKey(skBytes)
       npub = nip19.npubEncode(pubkey)
     } catch {
-      // fallback to localStorage if nsec missing
       npub = localStorage.getItem('bitsavers_npub') || ''
     }
     const ticketId = generateTicketId(npub, event.id)
+
+    // Start with localStorage profile
     let profile = {}
     try { profile = JSON.parse(localStorage.getItem('bitsavers_profile') || '{}') } catch {}
+
+    // If no picture, fetch fresh from Nostr
+    if (!profile.picture && pubkey) {
+      try {
+        const pool = new SimplePool()
+        const metaEvent = await new Promise((resolve) => {
+          const sub = pool.subscribe(RELAYS, { kinds: [0], authors: [pubkey], limit: 1 }, {
+            onevent(e) { sub.close(); resolve(e) },
+            oneose() { sub.close(); resolve(null) }
+          })
+          setTimeout(() => { sub.close(); resolve(null) }, 4000)
+        })
+        if (metaEvent) {
+          const meta = JSON.parse(metaEvent.content)
+          profile = { ...profile, ...meta }
+        }
+      } catch {}
+    }
+
     await generateTicket({ event, profile, npub, ticketId })
   }
 
