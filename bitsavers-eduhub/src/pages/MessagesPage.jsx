@@ -290,9 +290,9 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 110px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', padding: '0 16px 16px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 14, borderBottom: `1px solid ${C.border}`, marginBottom: 8, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 14, paddingBottom: 14, borderBottom: `1px solid ${C.border}`, marginBottom: 8, flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4, display: 'flex' }}>
           <ArrowLeft size={20} />
         </button>
@@ -499,8 +499,25 @@ export default function MessagesPage({ user, initialPeer, initialProfile }) {
     return <div style={{ textAlign: 'center', padding: '60px 0', color: C.muted, fontSize: 14 }}>Log in with your private key to use messages.</div>
   }
 
-  return activePeer
-    ? <Thread myPubkeyHex={myPubkeyHex} peer={activePeer} peerProfile={activePeerProfile} onBack={() => setActivePeer(null)} />
-    : <Inbox myPubkeyHex={myPubkeyHex} onOpen={(pk, prof) => { setActivePeer(pk); setActivePeerProfile(prof) }} />
+  return (
+    <>
+      <Inbox myPubkeyHex={myPubkeyHex} onOpen={(pk, prof) => { setActivePeer(pk); setActivePeerProfile(prof) }} />
+      {activePeer && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 100,
+          background: C.bg,
+          display: 'flex', flexDirection: 'column',
+          overflowY: 'hidden',
+        }}>
+          <Thread
+            myPubkeyHex={myPubkeyHex}
+            peer={activePeer}
+            peerProfile={activePeerProfile}
+            onBack={() => setActivePeer(null)}
+          />
+        </div>
+      )}
+    </>
+  )
 }
 

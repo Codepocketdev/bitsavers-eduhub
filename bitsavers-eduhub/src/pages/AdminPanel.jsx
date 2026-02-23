@@ -268,6 +268,7 @@ const publishEventToNostr = async (eventData) => {
       '📅 ' + eventData.title,
       eventData.date + (eventData.time ? ' at ' + eventData.time : ''),
       eventData.instructor ? 'Instructor: ' + eventData.instructor : '',
+      eventData.location ? '📍 ' + eventData.location : '',
       eventData.description || '',
       eventData.link ? 'Join: ' + eventData.link : '',
       'DATA:' + JSON.stringify(eventData),
