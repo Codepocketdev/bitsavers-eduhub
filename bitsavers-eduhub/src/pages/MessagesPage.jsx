@@ -255,6 +255,7 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
   const [showReactions, setShowReactions] = useState(null) // msgId
   const [swipingId, setSwipingId] = useState(null)
   const swipeStartX = useRef(null)
+  const [swipeOffsets, setSwipeOffsets] = useState({})
   const bottomRef = useRef(null)
   const scrollRef = useRef(null)
   const [showJump, setShowJump] = useState(false)
@@ -396,15 +397,25 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
               onTouchMove={e => {
                 if (swipeStartX.current === null) return
                 const dx = e.touches[0].clientX - swipeStartX.current
-                if (dx > 50) { setReplyTo({ id: m.id, text: m.text, isMine: m.isMine, senderName: m.isMine ? 'You' : peerName }); swipeStartX.current = null }
+                if (dx > 0 && dx < 80) {
+                  setSwipeOffsets(prev => ({ ...prev, [m.id]: Math.min(dx * 0.4, 24) }))
+                }
+                if (dx > 50) {
+                  setReplyTo({ id: m.id, text: m.text, isMine: m.isMine, senderName: m.isMine ? 'You' : peerName })
+                  setSwipeOffsets(prev => ({ ...prev, [m.id]: 0 }))
+                  swipeStartX.current = null
+                }
               }}
-              onTouchEnd={() => { swipeStartX.current = null }}
+              onTouchEnd={() => {
+                swipeStartX.current = null
+                setSwipeOffsets(prev => ({ ...prev, [m.id]: 0 }))
+              }}
             >
               {/* Bubble */}
               <div
                 onDoubleClick={() => setReplyTo({ id: m.id, text: m.text, isMine: m.isMine, senderName: m.isMine ? 'You' : peerName })}
                 onClick={() => setShowReactions(showReactions === m.id ? null : m.id)}
-                style={{ padding: '10px 14px', borderRadius: m.isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: m.isMine ? C.accent : C.card, border: m.isMine ? 'none' : `1px solid ${C.border}`, cursor: 'pointer' }}
+                style={{ padding: '10px 14px', borderRadius: m.isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: m.isMine ? C.accent : C.card, border: m.isMine ? 'none' : `1px solid ${C.border}`, cursor: 'pointer', transform: `translateX(${swipeOffsets[m.id] || 0}px)`, transition: swipeOffsets[m.id] ? 'none' : 'transform 0.2s ease' }}
               >
                 {/* Quoted reply block */}
                 {m.replyToText && (
