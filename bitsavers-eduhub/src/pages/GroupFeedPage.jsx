@@ -124,6 +124,36 @@ export default function GroupFeedPage({ group, user, onBack }) {
       oneose() {
         sub.close()
         setLoading(false)
+
+        // ── Live sub — stays open, streams new posts in real time ──
+        const now = Math.floor(Date.now() / 1000)
+        pool.subscribe(RELAYS, { kinds: [1], '#t': [groupTag], since: now }, {
+          onevent(e) {
+            if (cache.seenIds.has(e.id)) return
+            if (isProtocolEvent(e.content)) return
+            cache.seenIds.add(e.id)
+            const post = { id: e.id, pubkey: e.pubkey, content: e.content, created_at: e.created_at }
+            cache.posts = [...cache.posts, post].sort((a, b) => a.created_at - b.created_at)
+            savePostCache(group.id, cache.posts)
+            setPosts([...cache.posts])
+            // Fetch profile if missing
+            if (!cache.profiles[e.pubkey]) {
+              const pSub = pool.subscribe(RELAYS, { kinds: [0], authors: [e.pubkey], limit: 1 }, {
+                onevent(pe) {
+                  try {
+                    const p = JSON.parse(pe.content)
+                    cache.profiles[pe.pubkey] = p
+                    saveProfileCache(cache.profiles)
+                    setProfiles(prev => ({ ...prev, [pe.pubkey]: p }))
+                  } catch {}
+                },
+                oneose() { pSub.close() }
+              })
+            }
+          }
+          // intentionally no oneose — keep alive
+        })
+
         // Only fetch profiles we don't already have cached
         const pubkeys = [...new Set(cache.posts.map(p => p.pubkey))].filter(pk => !cache.profiles[pk])
         if (!pubkeys.length) return
