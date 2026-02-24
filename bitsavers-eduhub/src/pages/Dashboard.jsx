@@ -1034,7 +1034,7 @@ export default function Dashboard() {
       </div>
 
       {/* Page */}
-      <main style={{ padding: '16px 16px 80px' }}>
+      <main style={{ padding: '16px 16px 80px', maxWidth: 860, margin: '0 auto', width: '100%' }}>
         <div style={{ marginBottom: 18 }}>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>
             {nav?.icon} {nav?.label}
