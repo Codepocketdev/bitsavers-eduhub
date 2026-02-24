@@ -275,27 +275,23 @@ export default function GroupFeedPage({ group, user, onBack }) {
 
       {/* ── WhatsApp-style header — always fixed ── */}
       <div style={{ flexShrink: 0, background: C.card, borderBottom: `1px solid ${C.border}`, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        {/* Back arrow only */}
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: C.accent, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
           <ArrowLeft size={22} />
         </button>
-        {/* Round group avatar */}
         {group.coverImage
           ? <img src={group.coverImage} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: `2px solid ${C.border}` }} />
           : <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: '#000', flexShrink: 0 }}>{groupInitials}</div>
         }
-        {/* Name + institution */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.name}</div>
           {group.institution && <div style={{ fontSize: 11, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.institution}</div>}
         </div>
-        {/* Private badge */}
         {group.isPrivate && (
           <Lock size={14} color="#eab308" style={{ flexShrink: 0 }} />
         )}
       </div>
 
-      {/* ── Tabs — fixed below header ── */}
+      {/* ── Tabs ── */}
       <div style={{ flexShrink: 0, display: 'flex', gap: 0, background: C.card, borderBottom: `1px solid ${C.border}` }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
@@ -332,35 +328,81 @@ export default function GroupFeedPage({ group, user, onBack }) {
           )}
 
           {posts.map(post => {
+            const isMine = post.pubkey === myPubkey
             const profile = profiles[post.pubkey] || {}
             const name = profile.name || profile.display_name || post.pubkey.slice(0, 10) + '…'
             const imgMatch = post.content.match(/https?:\/\/\S+\.(jpg|jpeg|png|gif|webp)/i)
             const text = post.content.replace(/https?:\/\/\S+/g, '').trim()
             return (
-              <div key={post.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 12 }}>
-                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                  <Avatar profile={profile} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{name}</span>
-                      {profile.nip05 && (
-                        <span style={{ fontSize: 11, color: C.accent, display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, overflow: 'hidden' }}>
-                          <CheckCircle size={11} style={{ flexShrink: 0 }} />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.nip05}</span>
-                        </span>
-                      )}
+              <div key={post.id} style={{
+                display: 'flex',
+                flexDirection: isMine ? 'row-reverse' : 'row',
+                alignItems: 'flex-end',
+                gap: 8,
+                marginBottom: 12,
+              }}>
+                {/* Avatar — others only, bottom aligned */}
+                {!isMine && (
+                  <div style={{ flexShrink: 0, marginBottom: 2 }}>
+                    <Avatar profile={profile} size={34} />
+                  </div>
+                )}
+
+                {/* Bubble container */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: isMine ? 'flex-end' : 'flex-start',
+                  maxWidth: '75%',
+                }}>
+                  {/* Bubble */}
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: isMine
+                      ? '18px 18px 4px 18px'
+                      : '18px 18px 18px 4px',
+                    background: isMine ? C.accent : C.card,
+                    border: isMine ? 'none' : `1px solid ${C.border}`,
+                  }}>
+                    {/* Name inside bubble — others only */}
+                    {!isMine && (
+                      <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 5 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: C.accent }}>{name}</span>
+                        {profile.nip05 && (
+                          <span style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{profile.nip05}</span>
+                        )}
+                      </div>
+                    )}
+                    {text && (
+                      <div style={{
+                        fontSize: 14,
+                        color: isMine ? '#080808' : C.text,
+                        lineHeight: 1.6,
+                        wordBreak: 'break-word',
+                        marginBottom: imgMatch ? 8 : 0,
+                      }}>
+                        {text}
+                      </div>
+                    )}
+                    {imgMatch && (
+                      <img src={imgMatch[0]} alt="" style={{ width: '100%', maxWidth: 260, borderRadius: 8, display: 'block' }} onError={e => e.target.style.display = 'none'} />
+                    )}
+                    <div style={{
+                      fontSize: 10,
+                      color: isMine ? 'rgba(0,0,0,0.45)' : C.muted,
+                      marginTop: 4,
+                      textAlign: 'right',
+                    }}>
+                      {timeAgo(post.created_at)}
                     </div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{timeAgo(post.created_at)}</div>
                   </div>
                 </div>
-                {text && <div style={{ fontSize: 14, color: C.text, lineHeight: 1.65, wordBreak: 'break-word', marginBottom: imgMatch ? 10 : 0 }}>{text}</div>}
-                {imgMatch && <img src={imgMatch[0]} alt="" style={{ width: '100%', borderRadius: 10, display: 'block' }} onError={e => e.target.style.display = 'none'} />}
               </div>
             )
           })}
           </div>
 
-          {/* ── Compose — sticky at bottom of viewport ── */}
+          {/* ── Compose ── */}
           <div style={{ position: 'sticky', bottom: 0, background: C.bg, paddingBottom: 12, paddingTop: 6 }}>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '10px 14px', display: 'flex', alignItems: 'flex-end', gap: 10 }}>
               <textarea

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { nip04, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { finalizeEvent } from 'nostr-tools/pure'
-import { Send, ArrowLeft, MessageCircle, Loader } from 'lucide-react'
+import { Send, ArrowLeft, MessageCircle, Loader, ChevronDown } from 'lucide-react'
 
 // Include more relays - primal doesn't require auth, good fallback
 const RELAYS = [
@@ -201,6 +201,9 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const bottomRef = useRef(null)
+  const scrollRef = useRef(null)
+  const [showJump, setShowJump] = useState(false)
+  const userScrolledUp = useRef(false)
   const seenRef = useRef(new Set())
   const msgsRef = useRef([])
   const skBytes = getSkBytes()
@@ -258,7 +261,17 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
     }
   }, [myPubkeyHex, peer])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  const handleScroll = (e) => {
+    const el = e.target
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    const scrolledUp = distFromBottom > 200
+    setShowJump(scrolledUp)
+    userScrolledUp.current = scrolledUp
+  }
+
+  useEffect(() => {
+    if (!userScrolledUp.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   const send = async () => {
     if (!text.trim() || sending || !skBytes || !peer) return
@@ -304,7 +317,7 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 8 }}>
+      <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 8, position: 'relative' }}>
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '30px 0', color: C.muted, fontSize: 13 }}>
             <Loader size={14} style={{ animation: 'spin 1s linear infinite', color: C.accent }} />
@@ -323,6 +336,16 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
           </div>
         ))}
         <div ref={bottomRef} />
+      {showJump && (
+        <button onClick={() => {
+          userScrolledUp.current = false
+          setShowJump(false)
+          bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }}
+          style={{ position: 'sticky', bottom: 70, alignSelf: 'flex-end', marginRight: 4, background: C.accent, border: 'none', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.4)', flexShrink: 0 }}>
+          <ChevronDown size={18} color="#000" />
+        </button>
+      )}
       </div>
 
       {/* Input */}
