@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { nip04, nip19 } from 'nostr-tools'
 import { SimplePool } from 'nostr-tools/pool'
 import { finalizeEvent } from 'nostr-tools/pure'
-import { Send, ArrowLeft, MessageCircle, Loader, ChevronDown } from 'lucide-react'
+import { Send, ArrowLeft, MessageCircle, Loader, ChevronDown, CornerUpLeft, X } from 'lucide-react'
 
 // Include more relays - primal doesn't require auth, good fallback
 const RELAYS = [
@@ -17,6 +17,43 @@ const C = {
   accent: '#F7931A', dim: 'rgba(247,147,26,0.12)', text: '#F0EBE0',
   muted: '#666', green: '#22c55e',
 }
+
+const REACTIONS = ['⚡', '🟠', '🔥', '💪', '😂', '🎉', '👀', '🙏']
+
+// Coin flip sound using Web Audio API
+function playCoinSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const o = ctx.createOscillator()
+    const g = ctx.createGain()
+    o.connect(g); g.connect(ctx.destination)
+    o.frequency.setValueAtTime(880, ctx.currentTime)
+    o.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1)
+    g.gain.setValueAtTime(0.3, ctx.currentTime)
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+    o.start(ctx.currentTime)
+    o.stop(ctx.currentTime + 0.3)
+  } catch {}
+}
+
+
+// Encode reply into message content
+function encodeReply(replyName, replyText, msgText) {
+  return `REPLY:${JSON.stringify({ name: replyName, text: replyText })}\n---\n${msgText}`
+}
+
+// Decode message — returns { replyName, replyText, text }
+function decodeMessage(raw) {
+  if (!raw.startsWith('REPLY:')) return { text: raw, replyName: null, replyText: null }
+  try {
+    const newline = raw.indexOf('\n---\n')
+    if (newline === -1) return { text: raw, replyName: null, replyText: null }
+    const meta = JSON.parse(raw.slice('REPLY:'.length, newline))
+    const text = raw.slice(newline + 5)
+    return { text, replyName: meta.name, replyText: meta.text }
+  } catch { return { text: raw, replyName: null, replyText: null } }
+}
+
 
 // ── Profile cache (localStorage, 24hr TTL) ────────────────────────────────────
 const PROFILE_TTL = 3600000 // 1 hour
@@ -194,12 +231,30 @@ function subscribeLiveDMs(relayUrl, myPubkeyHex, skBytes, filter1, filter2, onEv
   return () => { closed = true; try { ws?.close() } catch {} }
 }
 
+
+// Parse message — extracts quoted reply if present
+function parseMessage({ id, rawText, isMine, ts }) {
+  if (rawText?.startsWith('REPLY:')) {
+    try {
+      const [meta, ...rest] = rawText.split('\n---\n')
+      const { name, text: replyText } = JSON.parse(meta.slice('REPLY:'.length))
+      return { id, text: rest.join('\n---\n'), isMine, ts, replyToText: replyText, replyToName: name }
+    } catch {}
+  }
+  return { id, text: rawText, isMine, ts }
+}
+
 // ─── Thread (full WhatsApp-style conversation) ────────────────────────────────
 function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [replyTo, setReplyTo] = useState(null) // { id, text, isMine }
+  const [reactions, setReactions] = useState({}) // { msgId: [emoji, ...] }
+  const [showReactions, setShowReactions] = useState(null) // msgId
+  const [swipingId, setSwipingId] = useState(null)
+  const swipeStartX = useRef(null)
   const bottomRef = useRef(null)
   const scrollRef = useRef(null)
   const [showJump, setShowJump] = useState(false)
@@ -231,7 +286,8 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
       let decrypted
       try { decrypted = await nip04.decrypt(skBytes, isMine ? peer : e.pubkey, e.content) }
       catch { decrypted = '[could not decrypt]' }
-      msgsRef.current = [...msgsRef.current, { id: e.id, text: decrypted, isMine, ts: e.created_at }]
+      const decoded = decodeMessage(decrypted)
+      msgsRef.current = [...msgsRef.current, { id: e.id, text: decoded.text, replyToName: decoded.replyName, replyToText: decoded.replyText, isMine, ts: e.created_at }]
         .sort((a,b) => a.ts - b.ts)
       setMessages([...msgsRef.current])
     }
@@ -277,7 +333,8 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
     if (!text.trim() || sending || !skBytes || !peer) return
     setSending(true)
     try {
-      const encrypted = await nip04.encrypt(skBytes, peer, text.trim())
+      const finalText = replyTo ? encodeReply(replyTo.senderName, replyTo.text, text.trim()) : text.trim()
+      const encrypted = await nip04.encrypt(skBytes, peer, finalText)
       const event = finalizeEvent({
         kind: 4, created_at: Math.floor(Date.now()/1000),
         tags: [['p', peer]], content: encrypted,
@@ -295,9 +352,12 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
       // Mark as seen immediately so live sub skips it when relay echoes it back
       seenRef.current.add(event.id)
       // Add sent message immediately to UI
-      msgsRef.current = [...msgsRef.current, { id: event.id, text: text.trim(), isMine: true, ts: event.created_at }]
+      const newMsg = { id: event.id, text: text.trim(), isMine: true, ts: event.created_at, replyToText: replyTo?.text || null, replyToName: replyTo?.senderName || null }
+      msgsRef.current = [...msgsRef.current, newMsg]
       setMessages([...msgsRef.current])
       setText('')
+      setReplyTo(null)
+      playCoinSound()
     } catch(e) { alert('Failed: ' + e.message) }
     setSending(false)
   }
@@ -327,14 +387,62 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
         {!loading && messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '40px 0', color: C.muted, fontSize: 13 }}>No messages yet — say hello!</div>
         )}
-        {messages.map(m => (
-          <div key={m.id} style={{ display: 'flex', justifyContent: m.isMine ? 'flex-end' : 'flex-start', paddingLeft: m.isMine ? 50 : 0, paddingRight: m.isMine ? 0 : 50 }}>
-            <div style={{ padding: '10px 14px', borderRadius: m.isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: m.isMine ? C.accent : C.card, border: m.isMine ? 'none' : `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 14, color: m.isMine ? '#080808' : C.text, lineHeight: 1.5, wordBreak: 'break-word' }}>{m.text}</div>
-              <div style={{ fontSize: 10, color: m.isMine ? 'rgba(0,0,0,0.45)' : C.muted, marginTop: 4, textAlign: 'right' }}>{timeAgo(m.ts)}</div>
+        {messages.map(m => {
+          const msgReactions = reactions[m.id] || []
+          return (
+            <div key={m.id}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: m.isMine ? 'flex-end' : 'flex-start', paddingLeft: m.isMine ? 50 : 0, paddingRight: m.isMine ? 0 : 50 }}
+              onTouchStart={e => { swipeStartX.current = e.touches[0].clientX }}
+              onTouchMove={e => {
+                if (swipeStartX.current === null) return
+                const dx = e.touches[0].clientX - swipeStartX.current
+                if (dx > 50) { setReplyTo({ id: m.id, text: m.text, isMine: m.isMine, senderName: m.isMine ? 'You' : peerName }); swipeStartX.current = null }
+              }}
+              onTouchEnd={() => { swipeStartX.current = null }}
+            >
+              {/* Bubble */}
+              <div
+                onDoubleClick={() => setReplyTo({ id: m.id, text: m.text, isMine: m.isMine, senderName: m.isMine ? 'You' : peerName })}
+                onClick={() => setShowReactions(showReactions === m.id ? null : m.id)}
+                style={{ padding: '10px 14px', borderRadius: m.isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: m.isMine ? C.accent : C.card, border: m.isMine ? 'none' : `1px solid ${C.border}`, cursor: 'pointer' }}
+              >
+                {/* Quoted reply block */}
+                {m.replyToText && (
+                  <div style={{ background: m.isMine ? 'rgba(0,0,0,0.15)' : 'rgba(247,147,26,0.08)', borderLeft: `3px solid ${m.isMine ? 'rgba(0,0,0,0.3)' : C.accent}`, borderRadius: 6, padding: '5px 9px', marginBottom: 7 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: m.isMine ? 'rgba(0,0,0,0.45)' : C.accent, marginBottom: 2 }}>{m.replyToName}</div>
+                    <div style={{ fontSize: 12, color: m.isMine ? 'rgba(0,0,0,0.4)' : C.muted, lineHeight: 1.4 }}>{m.replyToText.slice(0, 80)}{m.replyToText.length > 80 ? '…' : ''}</div>
+                  </div>
+                )}
+                <div style={{ fontSize: 14, color: m.isMine ? '#080808' : C.text, lineHeight: 1.5, wordBreak: 'break-word' }}>{m.text}</div>
+                <div style={{ fontSize: 10, color: m.isMine ? 'rgba(0,0,0,0.45)' : C.muted, marginTop: 4, textAlign: 'right' }}>{timeAgo(m.ts)}</div>
+              </div>
+
+              {/* Reactions display */}
+              {msgReactions.length > 0 && (
+                <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', justifyContent: m.isMine ? 'flex-end' : 'flex-start' }}>
+                  {[...new Set(msgReactions)].map(emoji => (
+                    <span key={emoji} style={{ fontSize: 13, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '2px 6px', cursor: 'pointer' }}
+                      onClick={() => setReactions(prev => ({ ...prev, [m.id]: [...(prev[m.id] || []), emoji] }))}>
+                      {emoji} {msgReactions.filter(r => r === emoji).length}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Emoji picker */}
+              {showReactions === m.id && (
+                <div style={{ display: 'flex', gap: 6, background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: '6px 10px', marginTop: 4, boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+                  {REACTIONS.map(emoji => (
+                    <span key={emoji} style={{ fontSize: 20, cursor: 'pointer' }}
+                      onClick={() => { setReactions(prev => ({ ...prev, [m.id]: [...(prev[m.id] || []), emoji] })); setShowReactions(null) }}>
+                      {emoji}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
         <div ref={bottomRef} />
       {showJump && (
         <button onClick={() => {
@@ -349,7 +457,20 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
       </div>
 
       {/* Input */}
-      <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+      {/* Reply preview bar */}
+      {replyTo && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: C.card, borderTop: `1px solid ${C.border}`, borderRadius: '8px 8px 0 0' }}>
+          <CornerUpLeft size={14} color={C.accent} style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.accent, marginBottom: 1 }}>{replyTo.senderName}</div>
+            <div style={{ fontSize: 11, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyTo.text.slice(0, 80)}{replyTo.text.length > 80 ? '…' : ''}</div>
+          </div>
+          <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 2, display: 'flex' }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: replyTo ? 'none' : `1px solid ${C.border}`, flexShrink: 0 }}>
         <textarea value={text} onChange={e => setText(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
           placeholder="Write a message…" rows={2}
@@ -391,8 +512,16 @@ function Inbox({ myPubkeyHex, onOpen }) {
       try { decrypted = await nip04.decrypt(skBytes, isMine ? peerPubkey : e.pubkey, e.content) }
       catch { decrypted = '[encrypted]' }
 
+      // Strip REPLY prefix for inbox preview
+      let previewText = decrypted
+      if (previewText?.startsWith('REPLY:')) {
+        try {
+          const parts = previewText.split('\n---\n')
+          previewText = parts.slice(1).join('\n---\n') || previewText
+        } catch {}
+      }
       if (!convRef.current[peerPubkey] || e.created_at > convRef.current[peerPubkey].ts) {
-        convRef.current[peerPubkey] = { lastMsg: decrypted, ts: e.created_at, isMine }
+        convRef.current[peerPubkey] = { lastMsg: previewText, ts: e.created_at, isMine }
         setConversations({ ...convRef.current })
       }
     }

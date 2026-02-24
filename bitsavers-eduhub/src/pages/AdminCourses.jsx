@@ -28,7 +28,7 @@ const CATEGORIES = ['Bitcoin Basics', 'Lightning Network', 'Mining', 'Security',
 const EMPTY = {
   id: '', title: '', description: '', instructor: '', level: 'Beginner',
   category: 'Bitcoin Basics', duration: '', price: 'Free', priceAmount: '',
-  image: '', link: '', linkLabel: 'Register Now', tags: '', published: true
+  image: '', link: '', linkLabel: 'Register Now', tags: '', videoUrl: '', published: true
 }
 
 async function publishCourses(courses, nsec) {
@@ -244,6 +244,11 @@ export default function AdminCourses() {
         {/* Tags */}
         <div style={{ marginBottom: 20 }}>
           <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, display: 'block', marginBottom: 6 }}>Tags <span style={{ fontWeight: 400 }}>(comma separated)</span></label>
+          {/* Video URL */}
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>Video URL (YouTube / Loom / Vimeo)</div>
+          <input value={editing.videoUrl || ''} onChange={e => setEditing(p => ({ ...p, videoUrl: e.target.value }))} placeholder="https://youtube.com/watch?v=… or https://loom.com/share/…"
+            style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 9, padding: '11px 13px', color: C.text, fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
+
           <input value={editing.tags} onChange={e => setEditing(p => ({ ...p, tags: e.target.value }))} placeholder="e.g. bitcoin, savings, africa"
             style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 13px', color: C.text, fontSize: 13, outline: 'none' }} />
         </div>

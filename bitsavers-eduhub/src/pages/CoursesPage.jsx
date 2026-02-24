@@ -20,19 +20,48 @@ const LEVEL_COLORS = {
 
 const getCached = () => { try { return JSON.parse(localStorage.getItem('bitsavers_courses') || '[]') } catch { return [] } }
 
+
+// Convert any YouTube/Loom/Vimeo URL to embeddable iframe src
+function getEmbedUrl(url) {
+  if (!url) return null
+  try {
+    // YouTube
+    const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/)
+    if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`
+    // Loom
+    const loomMatch = url.match(/loom\.com\/share\/([a-zA-Z0-9]+)/)
+    if (loomMatch) return `https://www.loom.com/embed/${loomMatch[1]}`
+    // Vimeo
+    const vimeoMatch = url.match(/vimeo\.com\/(\d+)/)
+    if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`
+  } catch {}
+  return null
+}
+
 function CourseCard({ course }) {
   const [expanded, setExpanded] = useState(false)
   const lvl = LEVEL_COLORS[course.level] || LEVEL_COLORS.Beginner
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden', marginBottom: 16 }}>
-      {/* Cover image */}
-      {course.image && (
+      {/* Video embed — shown instead of image if videoUrl exists */}
+      {course.videoUrl && getEmbedUrl(course.videoUrl) ? (
+        <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', background: '#000' }}>
+          <iframe
+            src={getEmbedUrl(course.videoUrl)}
+            title={course.title}
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', borderRadius: '16px 16px 0 0' }}
+          />
+        </div>
+      ) : course.image ? (
         <img src={course.image} alt={course.title}
           style={{ width: '100%', height: 180, objectFit: 'cover', display: 'block' }}
           onError={e => e.target.style.display = 'none'}
         />
-      )}
+      ) : null}
 
       <div style={{ padding: 16 }}>
         {/* Badges */}
