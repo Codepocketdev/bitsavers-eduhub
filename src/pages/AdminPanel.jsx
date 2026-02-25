@@ -100,33 +100,102 @@ const StatusMsg = ({ msg }) => {
 }
 
 // ─── Manage Admins ────────────────────────────────────────────────────────────
+const ADMIN_NOSTR_TAG = 'bitsavers-admins'
+
+async function publishAdminList(list) {
+  const pool = getPool()
+  const template = {
+    kind: 1,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [['t', ADMIN_NOSTR_TAG]],
+    content: 'ADMIN_LIST:' + JSON.stringify(list),
+  }
+  try {
+    const nsec = localStorage.getItem('bitsavers_nsec')
+    if (nsec) {
+      const ev = finalizeEvent(template, nsecToBytes(nsec))
+      await Promise.any(pool.publish(RELAYS, ev))
+    } else if (window.nostr) {
+      const ev = await window.nostr.signEvent(template)
+      await Promise.any(pool.publish(RELAYS, ev))
+    }
+  } catch(e) { console.error('publishAdminList failed:', e) }
+}
+
 function ManageAdmins({ user }) {
-  const [admins, setAdmins] = useState(() => {
-    const stored = localStorage.getItem('bitsavers_admins')
-    return stored ? JSON.parse(stored) : ADMIN_NPUBS
-  })
+  const [admins, setAdmins] = useState(ADMIN_NPUBS)
   const [newNpub, setNewNpub] = useState('')
   const [newLabel, setNewLabel] = useState('')
   const [msg, setMsg] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [adminProfiles, setAdminProfiles] = useState({})
 
-  const saveAdmins = (list) => {
+  // Fetch profiles for admins
+  useEffect(() => {
+    if (!admins.length) return
+    const hexKeys = admins.map(npub => { try { return nip19.decode(npub).data } catch { return null } }).filter(Boolean)
+    if (!hexKeys.length) return
+    const pool = getPool()
+    const sub = pool.subscribe(RELAYS, { kinds: [0], authors: hexKeys, limit: hexKeys.length + 5 }, {
+      onevent(e) {
+        try {
+          const p = JSON.parse(e.content)
+          setAdminProfiles(prev => ({ ...prev, [e.pubkey]: { name: p.display_name || p.name, picture: p.picture } }))
+        } catch {}
+      },
+      oneose() { sub.close() }
+    })
+    setTimeout(() => sub.close(), 5000)
+    return () => sub.close()
+  }, [admins.length])
+
+  // Fetch admin list from Nostr on mount
+  useEffect(() => {
+    const pool = getPool()
+    let latest = { created_at: 0 }
+    const sub = pool.subscribe(
+      ['wss://relay.damus.io','wss://nos.lol','wss://relay.nostr.band'],
+      { kinds: [1], '#t': [ADMIN_NOSTR_TAG], limit: 20 },
+      {
+        onevent(e) {
+          if (e.content.startsWith('ADMIN_LIST:') && e.created_at > latest.created_at) {
+            try { latest = { created_at: e.created_at, data: JSON.parse(e.content.slice('ADMIN_LIST:'.length)) } } catch {}
+          }
+        },
+        oneose() {
+          if (latest.data) {
+            const merged = [...new Set([...ADMIN_NPUBS, ...latest.data])]
+            setAdmins(merged)
+            localStorage.setItem('bitsavers_admins', JSON.stringify(merged))
+          }
+          setLoading(false)
+          sub.close()
+        }
+      }
+    )
+    setTimeout(() => { sub.close(); setLoading(false) }, 8000)
+    return () => sub.close()
+  }, [])
+
+  const saveAdmins = async (list) => {
     setAdmins(list)
     localStorage.setItem('bitsavers_admins', JSON.stringify(list))
+    await publishAdminList(list)
   }
 
-  const addAdmin = () => {
+  const addAdmin = async () => {
     const npub = newNpub.trim()
     if (!npub.startsWith('npub1')) { setMsg('err: Must be a valid npub1... key'); return }
     if (admins.includes(npub)) { setMsg('err: Already an admin'); return }
-    saveAdmins([...admins, npub])
+    await saveAdmins([...admins, npub])
     setNewNpub(''); setNewLabel('')
-    setMsg('ok: Admin added!')
-    setTimeout(() => setMsg(''), 2000)
+    setMsg('ok: Admin added and published to Nostr!')
+    setTimeout(() => setMsg(''), 3000)
   }
 
-  const removeAdmin = (npub) => {
+  const removeAdmin = async (npub) => {
     if (npub === ADMIN_NPUBS[0]) { setMsg('err: Cannot remove super admin'); setTimeout(() => setMsg(''), 2000); return }
-    saveAdmins(admins.filter(a => a !== npub))
+    await saveAdmins(admins.filter(a => a !== npub))
     setMsg('ok: Admin removed')
     setTimeout(() => setMsg(''), 2000)
   }
@@ -142,25 +211,35 @@ function ManageAdmins({ user }) {
       </Card>
 
       <Card>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 }}>Current Admins ({admins.length})</div>
-        {admins.map((npub, i) => (
-          <div key={npub} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: C.bg, flexShrink: 0 }}>
-              {i === 0 ? <Crown size={16} color='#080808' /> : <Shield size={16} color='#080808' />}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, color: i === 0 ? C.accent : C.text, fontWeight: 600 }}>
-                {i === 0 ? 'Super Admin' : `Admin ${i + 1}`}
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 }}>
+          {loading ? <span style={{display:'flex',alignItems:'center',gap:8}}><Loader size={14} style={{animation:'spin 1s linear infinite',color:C.accent}}/>Syncing admins from Nostr…</span> : `Current Admins (${admins.length})`}
+        </div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        {admins.map((npub, i) => {
+          const hexKey = (() => { try { return nip19.decode(npub).data } catch { return null } })()
+          const prof = hexKey ? (adminProfiles[hexKey] || {}) : {}
+          const name = prof.name || prof.display_name || (npub.slice(0,10) + '…')
+          const isSuper = npub === ADMIN_NPUBS[0]
+          return (
+            <div key={npub} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: '#000', flexShrink: 0, overflow: 'hidden', border: `2px solid ${isSuper ? C.accent : 'rgba(247,147,26,0.3)'}` }}>
+                {prof.picture
+                  ? <img src={prof.picture} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display='none'} />
+                  : name.slice(0,2).toUpperCase()}
               </div>
-              <div style={{ fontSize: 10, color: C.muted, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {npub.slice(0, 20)}…{npub.slice(-8)}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {name}
+                  {isSuper && <span style={{ fontSize: 10, background: 'rgba(247,147,26,0.15)', color: C.accent, padding: '2px 8px', borderRadius: 10, fontWeight: 800 }}>SUPER</span>}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>{npub}</div>
               </div>
+              {!isSuper && (
+                <Btn onClick={() => removeAdmin(npub)} variant="danger" style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0 }}>Remove</Btn>
+              )}
             </div>
-            {i !== 0 && (
-              <Btn onClick={() => removeAdmin(npub)} variant="danger" style={{ padding: '6px 12px', fontSize: 12 }}>Remove</Btn>
-            )}
-          </div>
-        ))}
+          )
+        })}
       </Card>
     </div>
   )

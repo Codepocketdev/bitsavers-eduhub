@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
+import { syncAdminsFromNostr } from './config/admins'
 import VerifyPage from './pages/VerifyPage'
 import SplashScreen from './components/SplashScreen'
 import Intro from './pages/Intro'
@@ -103,6 +104,9 @@ function AppContent() {
     </>
   )
 }
+
+// Sync admin list from Nostr on boot
+syncAdminsFromNostr()
 
 export default function App() {
   // Show verify page if on /verify route
