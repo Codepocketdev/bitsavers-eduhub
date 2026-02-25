@@ -52,7 +52,7 @@ export default function VerifyPage() {
       oneose() {
         certs = latestC.data || []
         claims = latestCl.data || []
-        const certMatch = certs.find(c => `bsv-${c.id.slice(-8)}` === data.id)
+        const certMatch = certs.find(c => c.credentialIds?.[data.npub] === data.id)
         const claimMatch = claims.find(cl => cl.npub === data.npub && certMatch && cl.certId === certMatch.id)
         resolved.current = true
         setStatus(certMatch && claimMatch ? 'verified' : 'invalid')
