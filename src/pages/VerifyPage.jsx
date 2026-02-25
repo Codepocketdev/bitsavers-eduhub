@@ -76,9 +76,15 @@ export default function VerifyPage() {
   return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Arial, sans-serif' }}>
       
+      {/* Back button */}
+      <button onClick={() => window.location.href = '/'}
+        style={{ position: 'fixed', top: 16, left: 16, background: 'rgba(247,147,26,0.1)', border: '1px solid rgba(247,147,26,0.2)', color: '#F7931A', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+        ← Back
+      </button>
+
       {/* Logo */}
       <div style={{ marginBottom: 32, textAlign: 'center' }}>
-        <div style={{ fontSize: 28, fontWeight: 800, color: C.accent }}>₿</div>
+        <div style={{ fontSize: 96, fontWeight: 800, color: C.accent, lineHeight: 1 }}>₿</div>
         <div style={{ fontSize: 13, color: C.muted, letterSpacing: 3, textTransform: 'uppercase', marginTop: 4 }}>BitSavers EduHub</div>
       </div>
 
