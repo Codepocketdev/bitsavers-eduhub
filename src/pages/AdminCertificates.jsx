@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { getPool, nsecToBytes } from '../lib/nostr'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { Award, Plus, Trash2, Eye, EyeOff, Loader, Copy, RefreshCw, Users, Check, ChevronDown } from 'lucide-react'
+import { generateCredentialId } from './ticketGenerator'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 const CERT_TAG = 'bitsavers-certificates'
@@ -12,10 +13,6 @@ const C = {
   border: 'rgba(247,147,26,0.18)', accent: '#F7931A',
   dim: 'rgba(247,147,26,0.12)', text: '#F0EBE0',
   muted: '#666', green: '#22c55e', red: '#ef4444',
-}
-
-function generateCode() {
-  return 'BSV-' + Math.random().toString(36).slice(2,6).toUpperCase() + '-' + Math.random().toString(36).slice(2,6).toUpperCase()
 }
 
 function publishCerts(certs, nsec) {
@@ -132,12 +129,29 @@ export default function AdminCertificates() {
     showMsg(`✓ ${selected.size} students added`)
   }
 
-  const save = () => {
+  const save = async () => {
     if (!editing.cohort.trim() || !editing.course.trim()) { showMsg('err: Cohort and course required'); return }
-    const entry = { ...editing, id: editing.id || Date.now().toString(), claimCode: editing.claimCode || generateCode() }
+
+    // Generate a unique SHA-256 credential ID for every eligible student
+    const npubs = editing.npubs.split('\n').map(n => n.trim()).filter(Boolean)
+    const credentialIds = {}
+    await Promise.all(
+      npubs.map(async (npub) => {
+        credentialIds[npub] = await generateCredentialId(npub, editing.course, editing.cohortCode)
+      })
+    )
+
+    const entry = {
+      ...editing,
+      id: editing.id || Date.now().toString(),
+      claimCode: editing.claimCode || ('BSV-' + Date.now().toString(36).toUpperCase()),
+      credentialIds, // { [npub]: 'BSV-XXXX-XXXX-XXXX' }
+    }
+
     const updated = editing.id && certs.find(c => c.id === editing.id)
       ? certs.map(c => c.id === editing.id ? entry : c)
       : [...certs, entry]
+
     setCerts(updated); publishCerts(updated, nsec); setEditing(null); showMsg('✓ Saved!')
   }
 
@@ -204,7 +218,7 @@ export default function AdminCertificates() {
         <div style={{ display: 'flex', gap: 8 }}>
           <input value={editing.claimCode} onChange={e => setEditing(p => ({ ...p, claimCode: e.target.value }))} placeholder="Auto-generated if empty"
             style={{ flex: 1, background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 9, padding: '11px 13px', color: C.accent, fontSize: 13, outline: 'none', fontFamily: 'monospace' }} />
-          <button onClick={() => setEditing(p => ({ ...p, claimCode: generateCode() }))}
+          <button onClick={() => setEditing(p => ({ ...p, claimCode: 'BSV-' + Date.now().toString(36).toUpperCase() }))}
             style={{ background: C.dim, border: `1px solid ${C.border}`, color: C.accent, padding: '0 14px', borderRadius: 9, cursor: 'pointer' }}>
             <RefreshCw size={14} />
           </button>
@@ -268,7 +282,7 @@ export default function AdminCertificates() {
         {/* Summary of applied */}
         {editing.npubs.split('\n').filter(n => n.trim()).length > 0 && (
           <div style={{ fontSize: 12, color: C.green, marginBottom: 6 }}>
-            ✓ {editing.npubs.split('\n').filter(n => n.trim()).length} students in eligible list
+            ✓ {editing.npubs.split('\n').filter(n => n.trim()).length} students — each will get a unique SHA-256 credential ID
           </div>
         )}
       </div>
@@ -310,7 +324,7 @@ export default function AdminCertificates() {
               <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{cert.course}</div>
               <div style={{ fontSize: 12, color: C.accent, marginTop: 2 }}>{cert.cohort}</div>
               <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
-                {cert.npubs?.split('\n').filter(n => n.trim()).length || 0} eligible students
+                {cert.npubs?.split('\n').filter(n => n.trim()).length || 0} eligible students · unique credential IDs
               </div>
             </div>
             <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: cert.unlocked ? 'rgba(34,197,94,0.12)' : 'rgba(100,100,100,0.12)', color: cert.unlocked ? C.green : C.muted, flexShrink: 0 }}>

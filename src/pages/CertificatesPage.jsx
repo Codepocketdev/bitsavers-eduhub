@@ -281,7 +281,7 @@ export default function CertificatesPage() {
         cohort: cert.cohort,
         course: cert.course,
         issuedBy: cert.issuedBy || 'BitSavers EduHub',
-        credentialId: `bsv-${cert.id.slice(-8)}`,
+        credentialId: cert.credentialIds?.[myNpub] || `bsv-${cert.id.slice(-8)}`,
         issuedDate: new Date().toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }),
         avatarUrl: myProfile.picture || '',
         npub: myNpub,

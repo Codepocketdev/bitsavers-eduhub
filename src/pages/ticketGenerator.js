@@ -278,3 +278,14 @@ export function generateTicketId(npub, eventId) {
   return Math.abs(hash).toString(36).padStart(10, '0')
 }
 
+// ── Credential ID — unique per student via SHA-256 ────────────────────────────
+// Format: BSV-XXXX-XXXX-XXXX derived from npub + course + cohortCode
+export async function generateCredentialId(npub, course, cohortCode) {
+  const input = `${npub}:${course}:${cohortCode}`
+  const encoded = new TextEncoder().encode(input)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  const hex = hashArray.slice(0, 6).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+  return `BSV-${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`
+}
+
