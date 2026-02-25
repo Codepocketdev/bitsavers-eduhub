@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { CheckCircle, XCircle, Award, User, BookOpen, Calendar, Hash, ExternalLink } from 'lucide-react'
 import { getPool } from '../lib/nostr'
 import { SimplePool } from 'nostr-tools/pool'
@@ -19,6 +19,7 @@ export default function VerifyPage() {
   const [params, setParams] = useState({})
   const [status, setStatus] = useState('loading') // loading | verified | invalid
   const [profile, setProfile] = useState(null)
+  const resolved = useRef(false)
 
   useEffect(() => {
     // Parse URL params
@@ -53,6 +54,7 @@ export default function VerifyPage() {
         claims = latestCl.data || []
         const certMatch = certs.find(c => `bsv-${c.id.slice(-8)}` === data.id)
         const claimMatch = claims.find(cl => cl.npub === data.npub && certMatch && cl.certId === certMatch.id)
+        resolved.current = true
         setStatus(certMatch && claimMatch ? 'verified' : 'invalid')
         sub.close()
       }
@@ -67,7 +69,7 @@ export default function VerifyPage() {
       })
     } catch {}
 
-    setTimeout(() => { sub.close(); if (status === 'loading') setStatus('invalid') }, 10000)
+    setTimeout(() => { if (!resolved.current) { sub.close(); setStatus('invalid') } }, 10000)
     return () => sub.close()
   }, [])
 
