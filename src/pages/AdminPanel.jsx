@@ -11,6 +11,7 @@ import AdminPoW from './AdminPoW'
 import AdminGallery from './AdminGallery'
 import AdminLiveClasses from './AdminLiveClasses'
 import AdminFollowing from './AdminFollowing'
+import AdminCertificates from './AdminCertificates'
 import AdminCourses from './AdminCourses'
 import AdminRsvp from './AdminRsvp'
 import AdminGroups from './AdminGroups'
@@ -19,7 +20,7 @@ import AdminGroupRequests from './AdminGroupRequests'
 import AdminBlog from './AdminBlog'
 import AdminSponsors from './AdminSponsors'
 import AdminSocials from './AdminSocials'
-import { Users, Newspaper, Calendar, Image, Video, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle, Inbox, Hammer, Share2, BookOpen, Ticket, MapPin, Clock, Link2, User, FileText, Hash } from 'lucide-react'
+import { Users, Newspaper, Calendar, Image, Video, Megaphone, Trash2, Upload, Copy, Crown, Shield, Loader, Send, ClipboardList, CheckCircle, AlertCircle, Inbox, Hammer, Share2, BookOpen, Ticket, MapPin, Clock, Link2, User, FileText, Hash, Award } from 'lucide-react'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 
@@ -49,6 +50,7 @@ const SECTIONS = [
   { id: 'grp-members',  label: 'Group Members', },
   { id: 'grp-requests', label: 'Group Requests', },
   { id: 'socials',     label: 'Socials',     },
+  { id: 'certificates', label: 'Certificates', },
 ]
 
 // ─── Shared components ────────────────────────────────────────────────────────
@@ -596,7 +598,7 @@ export default function AdminPanel({ user }) {
       {/* Section tabs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 20 }}>
         {SECTIONS.map(s => {
-          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <BookOpen size={14}/>, assignments: <ClipboardList size={14}/>, submissions: <Inbox size={14}/>, pow: <Hammer size={14}/>, gallery: <Image size={14}/>, liveclasses: <Video size={14}/>, following: <Users size={14}/>, courses: <BookOpen size={14}/>, rsvp: <Ticket size={14}/>, groups: <Users size={14}/>, 'grp-members': <Users size={14}/>, 'grp-requests': <Shield size={14}/>, socials: <Share2 size={14}/>, sponsors: <Users size={14}/> }
+          const icons = { admins: <Users size={14}/>, news: <Newspaper size={14}/>, events: <Calendar size={14}/>, media: <BookOpen size={14}/>, assignments: <ClipboardList size={14}/>, submissions: <Inbox size={14}/>, pow: <Hammer size={14}/>, gallery: <Image size={14}/>, liveclasses: <Video size={14}/>, following: <Users size={14}/>, courses: <BookOpen size={14}/>, rsvp: <Ticket size={14}/>, groups: <Users size={14}/>, 'grp-members': <Users size={14}/>, 'grp-requests': <Shield size={14}/>, socials: <Share2 size={14}/>, sponsors: <Users size={14}/>, certificates: <Award size={14}/> }
           return (
             <button key={s.id} onClick={() => setSection(s.id)} style={{
               background: section === s.id ? C.accent : C.card,
@@ -624,6 +626,7 @@ export default function AdminPanel({ user }) {
         {section === 'gallery'     && <AdminGallery />}
         {section === 'liveclasses'  && <AdminLiveClasses />}
         {section === 'following'    && <AdminFollowing />}
+        {section === 'certificates' && <AdminCertificates />}
         {section === 'courses'      && <AdminCourses />}
         {section === 'rsvp'         && <AdminRsvp />}
         {section === 'groups'       && <AdminGroups />}

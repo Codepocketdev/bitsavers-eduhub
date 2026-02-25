@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { Menu, X, BookOpen, MessageSquare, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp, MessageCircle, Video, Image as ImageIcon } from 'lucide-react'
+import { Menu, X, BookOpen, MessageSquare, Users, Newspaper, User, LogOut, Zap, Send, RefreshCw, Loader, CheckCircle, AlertCircle, Hash, Globe, Shield, Key, Eye, EyeOff, Edit2, TriangleAlert, Copy, Radio, Circle, TrendingUp, MessageCircle, Video, Image as ImageIcon, Award } from 'lucide-react'
 import { SimplePool } from 'nostr-tools/pool'
 import { publishProfile, fetchProfile } from '../lib/nostr'
 import ImageUpload from '../components/ImageUpload'
@@ -19,6 +19,7 @@ import LiveClassesPage from './LiveClassesPage'
 import CoursesPage from './CoursesPage'
 import GroupsPage from './GroupsPage'
 import GroupFeedPage from './GroupFeedPage'
+import CertificatesPage from './CertificatesPage'
 import { finalizeEvent } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 
@@ -835,6 +836,7 @@ const NAV = [
   { id: 'assessments', icon: <BookOpen size={18} />,  label: 'Assessments' },
   { id: 'groups',    icon: <Users size={18} />,      label: 'Communities' },
   { id: 'courses',   icon: <BookOpen size={18} />,   label: 'Courses' },
+  { id: 'certificates', icon: <Award size={18} />,    label: 'Certificates' },
   { id: 'liveclasses', icon: <Video size={18} />,      label: 'Live Classes' },
   { id: 'pow',       icon: <TrendingUp size={18} />, label: 'Proof of Work' },
   { id: 'donate',    icon: <Zap size={18} />,        label: 'Donate' },
@@ -1049,6 +1051,7 @@ export default function Dashboard() {
         {page === 'cohorts'   && <CohortsPage user={user} onProfileClick={openProfile} />}
         {page === 'assessments' && <AssessmentsPage user={user} />}
         {page === 'courses'   && <CoursesPage />}
+        {page === 'certificates' && <CertificatesPage />}
         {page === 'groups'    && !activeGroup && <GroupsPage user={user} onOpenGroup={(g) => setActiveGroup(g)} />}
         {page === 'groups'    && activeGroup && null}
         {page === 'liveclasses' && <LiveClassesPage />}

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
+import VerifyPage from './pages/VerifyPage'
 import SplashScreen from './components/SplashScreen'
 import Intro from './pages/Intro'
 import Login from './pages/Login'
@@ -48,6 +49,7 @@ function AppContent() {
     const timer = setTimeout(() => setShowSplash(false), 3000)
     return () => clearTimeout(timer)
   }, [])
+
 
   // Capture the install prompt — only show in browser, not inside installed PWA
   useEffect(() => {
@@ -103,6 +105,9 @@ function AppContent() {
 }
 
 export default function App() {
+  // Show verify page if on /verify route
+  if (window.location.pathname === '/verify') return <VerifyPage />
+
   return (
     <AuthProvider>
       <AppContent />
