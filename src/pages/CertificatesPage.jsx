@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { getPool, nsecToBytes } from '../lib/nostr'
 import { finalizeEvent } from 'nostr-tools/pure'
@@ -25,8 +25,6 @@ function toHex(npub) {
 
 async function generateCertificate({ name, nip05, cohort, course, issuedBy, credentialId, issuedDate, avatarUrl, npub }) {
   const QRCode = await import('qrcode')
-  
-  // QR data — verification payload
   const qrData = `https://biteduhub.com/verify?id=${credentialId}&npub=${encodeURIComponent(npub || '')}&cohort=${encodeURIComponent(cohort)}&course=${encodeURIComponent(course)}&issued=${encodeURIComponent(issuedDate)}&name=${encodeURIComponent(name)}`
   const qrDataUrl = await QRCode.default.toDataURL(qrData, {
     width: 160, margin: 1, errorCorrectionLevel: 'H',
@@ -36,7 +34,6 @@ async function generateCertificate({ name, nip05, cohort, course, issuedBy, cred
   qrImg.src = qrDataUrl
   await new Promise(r => { qrImg.onload = r })
 
-  // Load avatar
   let avatarImg = null
   if (avatarUrl) {
     try {
@@ -47,63 +44,50 @@ async function generateCertificate({ name, nip05, cohort, course, issuedBy, cred
     } catch { avatarImg = null }
   }
 
-  const S = 2
-  const W = 600 * S
-  const H = 460 * S
-  const px = v => v * S
-
+  const S = 2, W = 600 * S, H = 460 * S, px = v => v * S
   const canvas = document.createElement('canvas')
   canvas.width = W; canvas.height = H
   const ctx = canvas.getContext('2d')
 
-  // Background
   const bgGrad = ctx.createLinearGradient(0, 0, W, H)
   bgGrad.addColorStop(0, '#141414'); bgGrad.addColorStop(1, '#0a0a0a')
   ctx.fillStyle = bgGrad
   ctx.beginPath(); ctx.roundRect(0, 0, W, H, px(20)); ctx.fill()
 
-  // Outer border
   ctx.strokeStyle = 'rgba(247,147,26,0.4)'; ctx.lineWidth = px(2)
   ctx.beginPath(); ctx.roundRect(px(1), px(1), W - px(2), H - px(2), px(20)); ctx.stroke()
 
-  // Inner border
   ctx.strokeStyle = 'rgba(247,147,26,0.1)'; ctx.lineWidth = px(1)
   ctx.beginPath(); ctx.roundRect(px(12), px(12), W - px(24), H - px(24), px(14)); ctx.stroke()
 
-  // ₿ Watermark — top right, above QR zone
   ctx.fillStyle = 'rgba(247,147,26,0.05)'
   ctx.font = `bold ${px(220)}px Arial`
   ctx.textAlign = 'right'
   ctx.fillText('₿', W - px(10), px(180))
   ctx.textAlign = 'left'
 
-  // Top gradient band
   const topGrad = ctx.createLinearGradient(0, 0, W, px(100))
   topGrad.addColorStop(0, 'rgba(247,147,26,0.2)')
   topGrad.addColorStop(1, 'rgba(247,147,26,0.02)')
   ctx.fillStyle = topGrad
   ctx.beginPath(); ctx.roundRect(0, 0, W, px(100), [px(20), px(20), 0, 0]); ctx.fill()
 
-  // Header
   ctx.fillStyle = '#F7931A'; ctx.font = `${px(9)}px monospace`
   ctx.letterSpacing = `${px(3)}px`
   ctx.fillText(`${issuedBy.toUpperCase()}  ·  OFFICIAL CERTIFICATE`, px(28), px(32))
   ctx.letterSpacing = '0px'
 
-  // Divider
   const divGrad = ctx.createLinearGradient(px(28), 0, W - px(28), 0)
   divGrad.addColorStop(0, 'transparent'); divGrad.addColorStop(0.3, 'rgba(247,147,26,0.5)')
   divGrad.addColorStop(0.7, 'rgba(247,147,26,0.5)'); divGrad.addColorStop(1, 'transparent')
   ctx.strokeStyle = divGrad; ctx.lineWidth = px(1)
   ctx.beginPath(); ctx.moveTo(px(28), px(44)); ctx.lineTo(W - px(28), px(44)); ctx.stroke()
 
-  // Certificate of Completion
   ctx.fillStyle = 'rgba(247,147,26,0.65)'; ctx.font = `${px(11)}px monospace`
   ctx.letterSpacing = `${px(2.5)}px`
   ctx.fillText('CERTIFICATE OF COMPLETION', px(28), px(72))
   ctx.letterSpacing = '0px'
 
-  // Course title
   ctx.fillStyle = '#ffffff'; ctx.font = `800 ${px(24)}px Arial`
   const maxW = W - px(56)
   const words = course.split(' '); let line = ''; let titleY = px(118)
@@ -115,11 +99,9 @@ async function generateCertificate({ name, nip05, cohort, course, issuedBy, cred
   }
   ctx.fillText(line, px(28), titleY)
 
-  // This certifies that
   ctx.fillStyle = '#555'; ctx.font = `${px(11)}px Arial`
   ctx.fillText('This certifies that', px(28), px(155))
 
-  // ── Avatar ──────────────────────────────────────────────────────────────────
   const avR = px(30), avX = px(28) + avR, avY = px(196)
   ctx.save()
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.clip()
@@ -134,12 +116,10 @@ async function generateCertificate({ name, nip05, cohort, course, issuedBy, cred
     ctx.fillText((name || '?').slice(0, 2).toUpperCase(), avX, avY)
   }
   ctx.restore()
-  // Orange ring
   ctx.strokeStyle = 'rgba(247,147,26,0.7)'; ctx.lineWidth = px(3)
   ctx.beginPath(); ctx.arc(avX, avY, avR + 2, 0, Math.PI * 2); ctx.stroke()
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
 
-  // Name + nip05
   const nameX = px(28 + 60 + 16)
   ctx.fillStyle = '#ffffff'; ctx.font = `800 ${px(18)}px Arial`
   ctx.fillText(name.slice(0, 26), nameX, px(186))
@@ -148,16 +128,10 @@ async function generateCertificate({ name, nip05, cohort, course, issuedBy, cred
     ctx.fillText('✓ ' + nip05, nameX, px(204))
   }
 
-  // Separator
   ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = px(1)
   ctx.beginPath(); ctx.moveTo(px(28), px(232)); ctx.lineTo(W - px(28), px(232)); ctx.stroke()
 
-  // ── Info columns (left side) ────────────────────────────────────────────────
-  const cols = [
-    ['ISSUED', issuedDate],
-    ['COHORT', cohort],
-    ['CREDENTIAL ID', credentialId],
-  ]
+  const cols = [['ISSUED', issuedDate], ['COHORT', cohort], ['CREDENTIAL ID', credentialId]]
   let colX = px(28), infoY = px(252)
   cols.forEach(([label, value]) => {
     ctx.fillStyle = 'rgba(247,147,26,0.65)'; ctx.font = `${px(10)}px monospace`
@@ -167,27 +141,19 @@ async function generateCertificate({ name, nip05, cohort, course, issuedBy, cred
     infoY += px(44)
   })
 
-  // ── QR code — bottom right corner ────────────────────────────────────────────
-  const qrSize = px(120)
-  const qrX = W - px(28) - qrSize
-  const qrY = H - px(52) - px(16) - qrSize
-
-  // QR white bg with subtle border
+  const qrSize = px(120), qrX = W - px(28) - qrSize, qrY = H - px(52) - px(16) - qrSize
   ctx.fillStyle = '#ffffff'
   ctx.beginPath(); ctx.roundRect(qrX - px(5), qrY - px(5), qrSize + px(10), qrSize + px(10), px(10)); ctx.fill()
   ctx.strokeStyle = 'rgba(247,147,26,0.3)'; ctx.lineWidth = px(1.5)
   ctx.beginPath(); ctx.roundRect(qrX - px(5), qrY - px(5), qrSize + px(10), qrSize + px(10), px(10)); ctx.stroke()
   ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize)
 
-  // QR label
   ctx.fillStyle = 'rgba(247,147,26,0.5)'; ctx.font = `${px(9)}px monospace`
   ctx.letterSpacing = `${px(1)}px`
   ctx.textAlign = 'center'
   ctx.fillText('SCAN TO VERIFY', qrX + qrSize / 2, qrY - px(12))
-  ctx.letterSpacing = '0px'
-  ctx.textAlign = 'left'
+  ctx.letterSpacing = '0px'; ctx.textAlign = 'left'
 
-  // Bottom status bar
   const barY = H - px(52), barX = px(18), barW = W - px(36), barH = px(38)
   ctx.fillStyle = 'rgba(247,147,26,0.07)'
   ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, px(10)); ctx.fill()
@@ -201,11 +167,86 @@ async function generateCertificate({ name, nip05, cohort, course, issuedBy, cred
   return canvas.toDataURL('image/png')
 }
 
-export default function CertificatesPage() {
-  const { user } = useAuth()
+// ── Live WebSocket subscription — same pattern as CohortsPage ─────────────────
+function useLiveCerts() {
   const [certs, setCerts] = useState([])
   const [claims, setClaims] = useState([])
   const [loading, setLoading] = useState(true)
+
+  const certsRef = useRef({ created_at: 0, data: null })
+  const claimsRef = useRef({ created_at: 0, data: null })
+  const seenRef = useRef(new Set())
+  const eoseCountRef = useRef(0)
+  const totalRelays = RELAYS.length
+
+  useEffect(() => {
+    const closers = []
+
+    const flush = (live = false) => {
+      if (certsRef.current.data) setCerts(certsRef.current.data.filter(c => c.unlocked))
+      if (claimsRef.current.data) setClaims(claimsRef.current.data)
+      if (live || eoseCountRef.current >= totalRelays) setLoading(false)
+    }
+
+    const processEvent = (e) => {
+      if (seenRef.current.has(e.id)) return
+      seenRef.current.add(e.id)
+
+      if (e.content.startsWith('CERT_REGISTRY:') && e.created_at > certsRef.current.created_at) {
+        try {
+          certsRef.current = { created_at: e.created_at, data: JSON.parse(e.content.slice('CERT_REGISTRY:'.length)) }
+        } catch {}
+      }
+      if (e.content.startsWith('CERT_CLAIMS:') && e.created_at > claimsRef.current.created_at) {
+        try {
+          claimsRef.current = { created_at: e.created_at, data: JSON.parse(e.content.slice('CERT_CLAIMS:'.length)) }
+        } catch {}
+      }
+    }
+
+    const openWS = (relayUrl) => {
+      let ws, closed = false
+      const subId = 'cert-' + Math.random().toString(36).slice(2, 8)
+
+      const connect = () => {
+        if (closed) return
+        try {
+          ws = new WebSocket(relayUrl)
+          ws.onopen = () => {
+            if (!closed) ws.send(JSON.stringify(['REQ', subId, { kinds: [1], '#t': [CERT_TAG, CLAIMS_TAG], limit: 20 }]))
+          }
+          ws.onmessage = ({ data }) => {
+            if (closed) return
+            let msg; try { msg = JSON.parse(data) } catch { return }
+            const [type, id, payload] = msg
+            if (type === 'EVENT' && id === subId) {
+              processEvent(payload)
+              flush(true) // live event — update immediately
+            }
+            if (type === 'EOSE' && id === subId) {
+              eoseCountRef.current++
+              flush()
+            }
+          }
+          ws.onerror = () => {}
+          ws.onclose = () => { if (!closed) setTimeout(connect, 3000) } // auto-reconnect
+        } catch {}
+      }
+
+      connect()
+      return () => { closed = true; try { ws?.close() } catch {} }
+    }
+
+    RELAYS.forEach(relay => closers.push(openWS(relay)))
+    return () => closers.forEach(c => c())
+  }, [])
+
+  return { certs, claims, setClaims, loading }
+}
+
+export default function CertificatesPage() {
+  const { user } = useAuth()
+  const { certs, claims, setClaims, loading } = useLiveCerts()
   const [claimCode, setClaimCode] = useState('')
   const [claiming, setClaiming] = useState(null)
   const [msg, setMsg] = useState('')
@@ -215,29 +256,6 @@ export default function CertificatesPage() {
   const myHex = user?.pubkey || ''
   const myProfile = user?.profile || {}
   const myName = myProfile.name || myProfile.display_name || myNpub.slice(0, 12) + '…'
-
-  useEffect(() => {
-    const pool = getPool()
-    let latestCerts = { created_at: 0 }
-    let latestClaims = { created_at: 0 }
-    const sub = pool.subscribe(RELAYS, { kinds: [1], '#t': [CERT_TAG, CLAIMS_TAG], limit: 20 }, {
-      onevent(e) {
-        if (e.content.startsWith('CERT_REGISTRY:') && e.created_at > latestCerts.created_at) {
-          try { latestCerts = { created_at: e.created_at, data: JSON.parse(e.content.slice('CERT_REGISTRY:'.length)) } } catch {}
-        }
-        if (e.content.startsWith('CERT_CLAIMS:') && e.created_at > latestClaims.created_at) {
-          try { latestClaims = { created_at: e.created_at, data: JSON.parse(e.content.slice('CERT_CLAIMS:'.length)) } } catch {}
-        }
-      },
-      oneose() {
-        if (latestCerts.data) setCerts(latestCerts.data.filter(c => c.unlocked))
-        if (latestClaims.data) setClaims(latestClaims.data)
-        setLoading(false); sub.close()
-      }
-    })
-    setTimeout(() => { sub.close(); setLoading(false) }, 8000)
-    return () => sub.close()
-  }, [])
 
   const isClaimed = (certId) => claims.some(c => c.certId === certId && c.npub === myNpub)
   const isEligible = (cert) => {
@@ -289,7 +307,7 @@ export default function CertificatesPage() {
       const a = document.createElement('a')
       a.download = `bitsavers-certificate-${cert.cohort.replace(/\s+/g, '-').toLowerCase()}.png`
       a.href = dataUrl; a.click()
-    } catch (e) { showMsg('err: Failed to generate certificate') }
+    } catch { showMsg('err: Failed to generate certificate') }
     setGenerating(null)
   }
 
@@ -326,7 +344,6 @@ export default function CertificatesPage() {
         const eligible = isEligible(cert)
         return (
           <div key={cert.id} style={{ background: C.card, border: `1px solid ${claimed ? 'rgba(34,197,94,0.3)' : C.border}`, borderRadius: 16, padding: 18, marginBottom: 16 }}>
-            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
               <div style={{ width: 44, height: 44, borderRadius: 12, background: C.dim, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Award size={22} color={C.accent} />
