@@ -287,6 +287,18 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
       let decrypted
       try { decrypted = await nip04.decrypt(skBytes, isMine ? peer : e.pubkey, e.content) }
       catch { decrypted = '[could not decrypt]' }
+      // Handle reactions — update bubble, never add to message list
+      if (decrypted.startsWith('REACTION:')) {
+        try {
+          const d = JSON.parse(decrypted.slice('REACTION:'.length))
+          setReactions(prev => {
+            const existing = prev[d.msgId] || []
+            if (existing.includes(d.emoji)) return prev
+            return { ...prev, [d.msgId]: [...existing, d.emoji] }
+          })
+        } catch {}
+        return // important — stop here, don't add to messages
+      }
       const decoded = decodeMessage(decrypted)
       msgsRef.current = [...msgsRef.current, { id: e.id, text: decoded.text, replyToName: decoded.replyName, replyToText: decoded.replyText, isMine, ts: e.created_at }]
         .sort((a,b) => a.ts - b.ts)
@@ -363,6 +375,29 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
     setSending(false)
   }
 
+  const sendReaction = async (msgId, emoji, msgText) => {
+    if (!skBytes || !peer) return
+    setShowReactions(null)
+    // Encode reaction as a DM so recipient sees it
+    const reactionText = `REACTION:${JSON.stringify({ emoji, msgId, preview: msgText.slice(0, 60) })}`
+    try {
+      const encrypted = await nip04.encrypt(skBytes, peer, reactionText)
+      const event = finalizeEvent({
+        kind: 4, created_at: Math.floor(Date.now()/1000),
+        tags: [['p', peer]], content: encrypted,
+      }, skBytes)
+      RELAYS.forEach(relayUrl => {
+        try {
+          const ws = new WebSocket(relayUrl)
+          ws.onopen = () => { ws.send(JSON.stringify(['EVENT', event])); setTimeout(() => ws.close(), 3000) }
+        } catch {}
+      })
+      seenRef.current.add(event.id)
+    } catch(e) { console.error('reaction send failed', e) }
+    // Update local state immediately
+    setReactions(prev => ({ ...prev, [msgId]: [...(prev[msgId] || []), emoji] }))
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', padding: '0 16px 16px' }}>
       {/* Header */}
@@ -413,7 +448,7 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
             >
               {/* Bubble */}
               <div
-                onDoubleClick={() => setReplyTo({ id: m.id, text: m.text, isMine: m.isMine, senderName: m.isMine ? 'You' : peerName })}
+                onDoubleClick={() => { setReplyTo({ id: m.id, text: m.text, isMine: m.isMine, senderName: m.isMine ? 'You' : peerName }); setShowReactions(null) }}
                 onClick={() => setShowReactions(showReactions === m.id ? null : m.id)}
                 style={{ padding: '10px 14px', borderRadius: m.isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: m.isMine ? C.accent : C.card, border: m.isMine ? 'none' : `1px solid ${C.border}`, cursor: 'pointer', transform: `translateX(${swipeOffsets[m.id] || 0}px)`, transition: swipeOffsets[m.id] ? 'none' : 'transform 0.2s ease' }}
               >
@@ -440,12 +475,20 @@ function Thread({ myPubkeyHex, peer, peerProfile, onBack }) {
                 </div>
               )}
 
-              {/* Emoji picker */}
+              {/* Action popup — Reply + Emoji (works on PC and mobile) */}
               {showReactions === m.id && (
-                <div style={{ display: 'flex', gap: 6, background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: '6px 10px', marginTop: 4, boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: '6px 10px', marginTop: 4, boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+                  {/* Reply button */}
+                  <button
+                    onClick={() => { setReplyTo({ id: m.id, text: m.text, isMine: m.isMine, senderName: m.isMine ? 'You' : peerName }); setShowReactions(null) }}
+                    style={{ background: 'rgba(247,147,26,0.12)', border: `1px solid rgba(247,147,26,0.25)`, borderRadius: 16, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, color: C.accent, fontSize: 12, fontWeight: 700, marginRight: 4 }}>
+                    <CornerUpLeft size={13} /> Reply
+                  </button>
+                  <div style={{ width: 1, height: 20, background: C.border, marginRight: 4 }} />
+                  {/* Emoji reactions */}
                   {REACTIONS.map(emoji => (
                     <span key={emoji} style={{ fontSize: 20, cursor: 'pointer' }}
-                      onClick={() => { setReactions(prev => ({ ...prev, [m.id]: [...(prev[m.id] || []), emoji] })); setShowReactions(null) }}>
+                      onClick={() => sendReaction(m.id, emoji, m.text)}>
                       {emoji}
                     </span>
                   ))}
@@ -523,9 +566,14 @@ function Inbox({ myPubkeyHex, onOpen }) {
       try { decrypted = await nip04.decrypt(skBytes, isMine ? peerPubkey : e.pubkey, e.content) }
       catch { decrypted = '[encrypted]' }
 
-      // Strip REPLY prefix for inbox preview
+      // Format inbox preview
       let previewText = decrypted
-      if (previewText?.startsWith('REPLY:')) {
+      if (previewText?.startsWith('REACTION:')) {
+        try {
+          const d = JSON.parse(previewText.slice('REACTION:'.length))
+          previewText = `Reacted ${d.emoji} to "${d.preview?.slice(0,30)}…"`
+        } catch { previewText = 'Reacted to a message' }
+      } else if (previewText?.startsWith('REPLY:')) {
         try {
           const parts = previewText.split('\n---\n')
           previewText = parts.slice(1).join('\n---\n') || previewText
