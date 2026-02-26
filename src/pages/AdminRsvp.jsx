@@ -36,6 +36,7 @@ export default function AdminRsvp() {
   const [showScanner, setShowScanner] = useState(false)
   const [scanResult, setScanResult] = useState(null) // null | {status, attendee}
   const [search, setSearch] = useState('')
+  const liveSubRef = useRef(null)
 
   // Load events from localStorage (same source as NewsPage)
   useEffect(() => {
@@ -59,86 +60,127 @@ export default function AdminRsvp() {
     return () => sub.close()
   }, [])
 
+  // Cleanup live subs on unmount
+  useEffect(() => {
+    return () => { if (liveSubRef.current) liveSubRef.current() }
+  }, [])
+
   const loadRsvps = (event) => {
+    // Close any existing live subs first
+    if (liveSubRef.current) { liveSubRef.current(); liveSubRef.current = null }
+
     setSelectedEvent(event)
     setRsvps([])
+    setVerified({})
     setLoading(true)
-    const pool = new SimplePool()
-    const seenEventIds = new Set()
-    // byPubkey: e.pubkey is always unique per person, always present — single source of truth
-    const byPubkey = {}
 
-    const sub = pool.subscribe(RELAYS, {
-      kinds: [1], '#t': ['bitsavers-rsvp', event.id], limit: 200
-    }, {
-      onevent(e) {
-        if (seenEventIds.has(e.id)) return
-        if (!e.content.startsWith('RSVP:')) return
-        seenEventIds.add(e.id)
+    const seen = new Set()
+    const byPubkey = {}        // pubkey → rsvp
+    const verifyEvents = []
+    let resetAfter = 0
+    let eoseRsvp = 0
+    let eoseVerify = 0
+    const closers = []
+
+    const flushRsvps = () => {
+      const deduped = Object.values(byPubkey)
+      setRsvps(deduped)
+      setLoading(false)
+      // Fetch profiles for any new pubkeys
+      const pubkeys = deduped.map(r => r.pubkey).filter(Boolean)
+      if (!pubkeys.length) return
+      const pool = new SimplePool()
+      const pSub = pool.subscribe(RELAYS, { kinds: [0], authors: pubkeys, limit: pubkeys.length }, {
+        onevent(e) {
+          try { setProfiles(prev => ({ ...prev, [e.pubkey]: JSON.parse(e.content) })) } catch {}
+        },
+        oneose() { pSub.close() }
+      })
+      setTimeout(() => pSub.close(), 8000)
+    }
+
+    const flushVerify = () => {
+      const newVerified = {}
+      verifyEvents.forEach(e => {
         try {
-          const data = JSON.parse(e.content.slice('RSVP:'.length))
-          if (data.eventId !== event.id) return
-          // Keep only the latest event per pubkey — one row per person, always
-          if (!byPubkey[e.pubkey] || e.created_at > byPubkey[e.pubkey].timestamp) {
-            byPubkey[e.pubkey] = { ...data, pubkey: e.pubkey, timestamp: e.created_at }
-          }
+          const d = JSON.parse(e.content.slice('VERIFY:'.length))
+          if (d.eventId !== event.id) return
+          if (d.time <= resetAfter) return
+          newVerified[d.npub] = { time: d.time, npub: d.npub, ticketId: d.ticketId }
         } catch {}
-      },
-      oneose() {
-        sub.close()
-        const deduped = Object.values(byPubkey)
-        setRsvps(deduped)
-        setLoading(false)
+      })
+      setVerified(newVerified)
+    }
 
-        // Load verify + reset events from Nostr
-        const verifyEvents = []
-        let resetAfter = 0  // timestamp of latest RESET — ignore VERIFYs before this
+    // Raw WebSocket per relay — stays open for live updates
+    const openWS = (relayUrl, filter, onEvent, onEose) => {
+      let ws, closed = false
+      const subId = 'rsvp-' + Math.random().toString(36).slice(2, 8)
 
-        const vSub = pool.subscribe(RELAYS, {
-          kinds: [1], '#t': ['bitsavers-verify', event.id], limit: 500
-        }, {
-          onevent(e) {
-            if (e.content.startsWith('VERIFY_RESET:')) {
-              try {
-                const d = JSON.parse(e.content.slice('VERIFY_RESET:'.length))
-                if (d.eventId === event.id && d.time > resetAfter) resetAfter = d.time
-              } catch {}
-            } else if (e.content.startsWith('VERIFY:')) {
-              verifyEvents.push(e)
-            }
-          },
-          oneose() {
-            vSub.close()
-            const newVerified = {}
-            verifyEvents.forEach(e => {
-              try {
-                const d = JSON.parse(e.content.slice('VERIFY:'.length))
-                if (d.eventId !== event.id) return
-                if (d.time <= resetAfter) return  // ignore scans before reset
-                newVerified[d.npub] = { time: d.time, npub: d.npub, ticketId: d.ticketId }
-              } catch {}
-            })
-            setVerified(newVerified)
+      const connect = () => {
+        if (closed) return
+        try {
+          ws = new WebSocket(relayUrl)
+          ws.onopen = () => { if (!closed) ws.send(JSON.stringify(['REQ', subId, filter])) }
+          ws.onmessage = ({ data }) => {
+            if (closed) return
+            let msg; try { msg = JSON.parse(data) } catch { return }
+            const [type, id, payload] = msg
+            if (type === 'EVENT' && id === subId) onEvent(payload)
+            if (type === 'EOSE' && id === subId) onEose?.()
           }
-        })
-        setTimeout(() => vSub.close(), 6000)
-
-        // Fetch profiles
-        const pubkeys = deduped.map(r => r.pubkey).filter(Boolean)
-        if (!pubkeys.length) return
-        const pSub = pool.subscribe(RELAYS, { kinds: [0], authors: pubkeys, limit: pubkeys.length }, {
-          onevent(e) {
-            try {
-              const p = JSON.parse(e.content)
-              setProfiles(prev => ({ ...prev, [e.pubkey]: p }))
-            } catch {}
-          },
-          oneose() { pSub.close() }
-        })
-        setTimeout(() => pSub.close(), 8000)
+          ws.onerror = () => {}
+          ws.onclose = () => { if (!closed) setTimeout(connect, 3000) } // auto-reconnect
+        } catch {}
       }
+
+      connect()
+      return () => { closed = true; try { ws?.close() } catch {} }
+    }
+
+    // Sub 1: RSVPs — historical + live
+    RELAYS.forEach(relayUrl => {
+      closers.push(openWS(
+        relayUrl,
+        { kinds: [1], '#t': ['bitsavers-rsvp', event.id], limit: 200 },
+        (e) => {
+          if (seen.has(e.id)) return; seen.add(e.id)
+          if (!e.content.startsWith('RSVP:')) return
+          try {
+            const data = JSON.parse(e.content.slice('RSVP:'.length))
+            if (data.eventId !== event.id) return
+            if (!byPubkey[e.pubkey] || e.created_at > byPubkey[e.pubkey].timestamp)
+              byPubkey[e.pubkey] = { ...data, pubkey: e.pubkey, timestamp: e.created_at }
+            flushRsvps() // live update immediately
+          } catch {}
+        },
+        () => { eoseRsvp++; if (eoseRsvp >= RELAYS.length) flushRsvps() }
+      ))
     })
-    setTimeout(() => { sub.close(); setLoading(false) }, 10000)
+
+    // Sub 2: Verify/Reset — historical + live
+    RELAYS.forEach(relayUrl => {
+      closers.push(openWS(
+        relayUrl,
+        { kinds: [1], '#t': ['bitsavers-verify', event.id], limit: 500 },
+        (e) => {
+          if (seen.has(e.id)) return; seen.add(e.id)
+          if (e.content.startsWith('VERIFY_RESET:')) {
+            try {
+              const d = JSON.parse(e.content.slice('VERIFY_RESET:'.length))
+              if (d.eventId === event.id && d.time > resetAfter) { resetAfter = d.time; flushVerify() }
+            } catch {}
+          } else if (e.content.startsWith('VERIFY:')) {
+            verifyEvents.push(e)
+            flushVerify() // live scan update immediately
+          }
+        },
+        () => { eoseVerify++; if (eoseVerify >= RELAYS.length) flushVerify() }
+      ))
+    })
+
+    // Store cleanup fn so we can close when switching events
+    liveSubRef.current = () => closers.forEach(c => c())
   }
 
   const verifyTicket = (scannedData) => {
