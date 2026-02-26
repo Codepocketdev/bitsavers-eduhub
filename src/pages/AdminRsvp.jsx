@@ -89,6 +89,28 @@ export default function AdminRsvp() {
         const deduped = Object.values(byPubkey)
         setRsvps(deduped)
         setLoading(false)
+
+        // Load scan/verify events from Nostr — source of truth for attended status
+        const vSub = pool.subscribe(RELAYS, {
+          kinds: [1], '#t': ['bitsavers-verify', event.id], limit: 500
+        }, {
+          onevent(e) {
+            if (!e.content.startsWith('VERIFY:')) return
+            try {
+              const d = JSON.parse(e.content.slice('VERIFY:'.length))
+              if (d.eventId !== event.id) return
+              setVerified(prev => {
+                if (prev[d.npub]) return prev // already have it
+                const updated = { ...prev, [d.npub]: { time: d.time, npub: d.npub, ticketId: d.ticketId } }
+                saveVerified(updated)
+                return updated
+              })
+            } catch {}
+          },
+          oneose() { vSub.close() }
+        })
+        setTimeout(() => vSub.close(), 6000)
+
         // Fetch profiles
         const pubkeys = deduped.map(r => r.pubkey).filter(Boolean)
         if (!pubkeys.length) return
@@ -183,19 +205,21 @@ export default function AdminRsvp() {
     saveVerified(newVerified)
     setScanResult({ status: 'success', attendee: { name, picture: profile.picture } })
 
-    // Publish verify to Nostr (fire and forget)
+    // Publish verify to Nostr — supports nsec + NIP-07
     try {
+      const template = {
+        kind: 1,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['t', 'bitsavers-verify'], ['t', selectedEvent.id]],
+        content: 'VERIFY:' + JSON.stringify({ ticketId, npub, eventId: selectedEvent.id, time: Date.now() }),
+      }
+      const p = getPool()
       const nsec = localStorage.getItem('bitsavers_nsec')
       if (nsec) {
-        const skBytes = nsecToBytes(nsec)
-        const pool = new SimplePool()
-        const ev = finalizeEvent({
-          kind: 1,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [['t', 'bitsavers'], ['t', 'bitsavers-verify'], ['t', selectedEvent.id]],
-          content: 'VERIFY:' + JSON.stringify({ ticketId, npub, eventId: selectedEvent.id, time: Date.now() }),
-        }, skBytes)
-        Promise.any(pool.publish(RELAYS, ev)).catch(() => {})
+        const ev = finalizeEvent(template, nsecToBytes(nsec))
+        Promise.any(p.publish(RELAYS, ev)).catch(() => {})
+      } else if (window.nostr) {
+        window.nostr.signEvent(template).then(ev => p.publish(RELAYS, ev)).catch(() => {})
       }
     } catch {}
   }
@@ -437,4 +461,4 @@ export default function AdminRsvp() {
     </div>
   )
 }
-	
+
