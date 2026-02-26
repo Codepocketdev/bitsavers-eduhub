@@ -31,7 +31,7 @@ export default function AdminRsvp() {
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [rsvps, setRsvps] = useState([]) // { npub, name, picture, ticketId, timestamp }
   const [profiles, setProfiles] = useState({})
-  const [verified, setVerified] = useState(getVerified)
+  const [verified, setVerified] = useState({})
   const [loading, setLoading] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [scanResult, setScanResult] = useState(null) // null | {status, attendee}
@@ -90,24 +90,36 @@ export default function AdminRsvp() {
         setRsvps(deduped)
         setLoading(false)
 
-        // Load scan/verify events from Nostr — source of truth for attended status
+        // Load verify + reset events from Nostr
+        const verifyEvents = []
+        let resetAfter = 0  // timestamp of latest RESET — ignore VERIFYs before this
+
         const vSub = pool.subscribe(RELAYS, {
           kinds: [1], '#t': ['bitsavers-verify', event.id], limit: 500
         }, {
           onevent(e) {
-            if (!e.content.startsWith('VERIFY:')) return
-            try {
-              const d = JSON.parse(e.content.slice('VERIFY:'.length))
-              if (d.eventId !== event.id) return
-              setVerified(prev => {
-                if (prev[d.npub]) return prev // already have it
-                const updated = { ...prev, [d.npub]: { time: d.time, npub: d.npub, ticketId: d.ticketId } }
-                saveVerified(updated)
-                return updated
-              })
-            } catch {}
+            if (e.content.startsWith('VERIFY_RESET:')) {
+              try {
+                const d = JSON.parse(e.content.slice('VERIFY_RESET:'.length))
+                if (d.eventId === event.id && d.time > resetAfter) resetAfter = d.time
+              } catch {}
+            } else if (e.content.startsWith('VERIFY:')) {
+              verifyEvents.push(e)
+            }
           },
-          oneose() { vSub.close() }
+          oneose() {
+            vSub.close()
+            const newVerified = {}
+            verifyEvents.forEach(e => {
+              try {
+                const d = JSON.parse(e.content.slice('VERIFY:'.length))
+                if (d.eventId !== event.id) return
+                if (d.time <= resetAfter) return  // ignore scans before reset
+                newVerified[d.npub] = { time: d.time, npub: d.npub, ticketId: d.ticketId }
+              } catch {}
+            })
+            setVerified(newVerified)
+          }
         })
         setTimeout(() => vSub.close(), 6000)
 
@@ -224,6 +236,29 @@ export default function AdminRsvp() {
     } catch {}
   }
 
+
+  const resetAttendance = async () => {
+    if (!selectedEvent) return
+    if (!window.confirm('Reset all attendance for this event? This cannot be undone.')) return
+    const template = {
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['t', 'bitsavers-verify'], ['t', selectedEvent.id]],
+      content: 'VERIFY_RESET:' + JSON.stringify({ eventId: selectedEvent.id, time: Date.now() }),
+    }
+    try {
+      const p = getPool()
+      const nsec = localStorage.getItem('bitsavers_nsec')
+      if (nsec) {
+        const ev = finalizeEvent(template, nsecToBytes(nsec))
+        await Promise.any(p.publish(RELAYS, ev))
+      } else if (window.nostr) {
+        const ev = await window.nostr.signEvent(template)
+        await Promise.any(p.publish(RELAYS, ev))
+      }
+      setVerified({})
+    } catch(e) { console.error(e) }
+  }
 
   const exportCsv = () => {
     const rows = [['Name', 'NIP05', 'npub', 'Ticket ID', 'RSVP Time', 'Status']]
@@ -375,7 +410,8 @@ export default function AdminRsvp() {
           <QrCode size={18} /> Scan Ticket at Door
         </button>
         <button onClick={exportCsv} style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, color: C.accent, padding: '13px', borderRadius: 12, fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <FileDown size={16} /> Export Attendees CSV
+          <FileDown size={16} /> Export Attendees CSV</button>
+            <button onClick={resetAttendance} style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', color:C.red, padding:'10px 16px', borderRadius:10, fontWeight:700, fontSize:13, cursor:'pointer', width:'100%', justifyContent:'center', marginBottom:8 }}>Reset Attendance
         </button>
       </div>
 
