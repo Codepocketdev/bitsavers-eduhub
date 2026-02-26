@@ -3,7 +3,7 @@ import { SimplePool } from 'nostr-tools/pool'
 import { nip19 } from 'nostr-tools'
 import { getPool, nsecToBytes } from '../lib/nostr'
 import { finalizeEvent } from 'nostr-tools/pure'
-import { Users, CheckCircle, Clock, QrCode, X, ChevronDown, ChevronUp, Download, Search, Calendar, AlertTriangle, XCircle, Loader, FileDown, Ticket } from 'lucide-react'
+import { Users, CheckCircle, Clock, QrCode, X, ChevronDown, ChevronUp, Download, Search, Calendar, AlertTriangle, XCircle, Loader, FileDown, Ticket, Lock, Eye, EyeOff } from 'lucide-react'
 import TicketScanner from './TicketScanner'
 import { generateTicketId } from './ticketGenerator'
 
@@ -31,12 +31,17 @@ export default function AdminRsvp() {
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [rsvps, setRsvps] = useState([]) // { npub, name, picture, ticketId, timestamp }
   const [profiles, setProfiles] = useState({})
-  const [verified, setVerified] = useState({})
+  const [verified, setVerified] = useState(getVerified)
   const [loading, setLoading] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [scanResult, setScanResult] = useState(null) // null | {status, attendee}
   const [search, setSearch] = useState('')
   const liveSubRef = useRef(null)
+  const [showReset, setShowReset] = useState(false)
+  const [resetPin, setResetPin] = useState('')
+  const [resetMsg, setResetMsg] = useState('')
+  const [showPin, setShowPin] = useState(false)
+  const RESET_PIN = 'BITSAVERS'
 
   // Load events from localStorage (same source as NewsPage)
   useEffect(() => {
@@ -100,7 +105,9 @@ export default function AdminRsvp() {
     }
 
     const flushVerify = () => {
-      const newVerified = {}
+      // Start with localStorage backup, then overlay with Nostr data
+      const cached = getVerified()
+      const newVerified = { ...cached }
       verifyEvents.forEach(e => {
         try {
           const d = JSON.parse(e.content.slice('VERIFY:'.length))
@@ -109,7 +116,14 @@ export default function AdminRsvp() {
           newVerified[d.npub] = { time: d.time, npub: d.npub, ticketId: d.ticketId }
         } catch {}
       })
+      // If reset happened, wipe cached entries that predate it
+      if (resetAfter > 0) {
+        Object.keys(newVerified).forEach(k => {
+          if (newVerified[k].time <= resetAfter) delete newVerified[k]
+        })
+      }
       setVerified(newVerified)
+      saveVerified(newVerified)
     }
 
     // Raw WebSocket per relay — stays open for live updates
@@ -162,7 +176,7 @@ export default function AdminRsvp() {
     RELAYS.forEach(relayUrl => {
       closers.push(openWS(
         relayUrl,
-        { kinds: [1], '#t': ['bitsavers-verify', event.id], limit: 500 },
+        { kinds: [1], '#t': ['bitsavers-verify'], since: 0, limit: 500 },
         (e) => {
           if (seen.has(e.id)) return; seen.add(e.id)
           if (e.content.startsWith('VERIFY_RESET:')) {
@@ -183,7 +197,7 @@ export default function AdminRsvp() {
     liveSubRef.current = () => closers.forEach(c => c())
   }
 
-  const verifyTicket = (scannedData) => {
+  const verifyTicket = async (scannedData) => {
     setShowScanner(false)
 
     if (!scannedData.startsWith('bitsavers-ticket:')) {
@@ -253,35 +267,46 @@ export default function AdminRsvp() {
       setScanResult({ status: 'no_rsvp', npub, profile, name, ticketId }); return
     }
 
-    // 6. All good — mark attended
-    const newVerified = { ...verified, [npub]: { time: Date.now(), npub, ticketId } }
+    // 6. All good — save locally first, then publish to Nostr
+    const scanTime = Date.now()
+    const newVerified = { ...verified, [npub]: { time: scanTime, npub, ticketId } }
     setVerified(newVerified)
-    saveVerified(newVerified)
-    setScanResult({ status: 'success', attendee: { name, picture: profile.picture } })
+    saveVerified(newVerified) // localStorage backup for current session
 
-    // Publish verify to Nostr — supports nsec + NIP-07
+    let published = false
     try {
       const template = {
         kind: 1,
         created_at: Math.floor(Date.now() / 1000),
         tags: [['t', 'bitsavers-verify'], ['t', selectedEvent.id]],
-        content: 'VERIFY:' + JSON.stringify({ ticketId, npub, eventId: selectedEvent.id, time: Date.now() }),
+        content: 'VERIFY:' + JSON.stringify({ ticketId, npub, eventId: selectedEvent.id, time: scanTime }),
       }
       const p = getPool()
       const nsec = localStorage.getItem('bitsavers_nsec')
       if (nsec) {
         const ev = finalizeEvent(template, nsecToBytes(nsec))
-        Promise.any(p.publish(RELAYS, ev)).catch(() => {})
+        await Promise.any(p.publish(RELAYS, ev))
+        published = true
       } else if (window.nostr) {
-        window.nostr.signEvent(template).then(ev => p.publish(RELAYS, ev)).catch(() => {})
+        const ev = await window.nostr.signEvent(template)
+        await Promise.any(p.publish(RELAYS, ev))
+        published = true
       }
-    } catch {}
+    } catch(e) { console.error('VERIFY publish failed:', e) }
+
+    setScanResult({
+      status: 'success',
+      attendee: { name, picture: profile.picture },
+      published // show warning if Nostr publish failed
+    })
   }
 
 
-  const resetAttendance = async () => {
-    if (!selectedEvent) return
-    if (!window.confirm('Reset all attendance for this event? This cannot be undone.')) return
+  const confirmReset = async () => {
+    if (resetPin.trim().toUpperCase() !== RESET_PIN) {
+      setResetMsg('err: Wrong pin'); return
+    }
+    setResetMsg('Publishing…')
     const template = {
       kind: 1,
       created_at: Math.floor(Date.now() / 1000),
@@ -299,7 +324,10 @@ export default function AdminRsvp() {
         await Promise.any(p.publish(RELAYS, ev))
       }
       setVerified({})
-    } catch(e) { console.error(e) }
+      setShowReset(false)
+      setResetPin('')
+      setResetMsg('')
+    } catch(e) { setResetMsg('err: Failed to publish') }
   }
 
   const exportCsv = () => {
@@ -346,31 +374,41 @@ export default function AdminRsvp() {
         'rgba(239,68,68,0.4)'
       }`, borderRadius: 20, padding: 30, width: '100%', maxWidth: 380, textAlign: 'center' }}>
 
+        {/* Avatar helper */}
+        {(() => {
+          const pic = scanResult.attendee?.picture || scanResult.profile?.picture
+          const name = scanResult.attendee?.name || scanResult.name || '?'
+          const borderColor = scanResult.status === 'success' ? C.green : scanResult.status === 'already' ? '#a78bfa' : scanResult.status === 'no_rsvp' ? '#eab308' : C.red
+          return (
+            <div style={{ width: 80, height: 80, borderRadius: '50%', border: `3px solid ${borderColor}`, overflow: 'hidden', margin: '0 auto 16px', background: 'linear-gradient(135deg,#F7931A,#b8690f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 900, color: '#000', flexShrink: 0 }}>
+              {pic
+                ? <img src={pic} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display='none'} />
+                : name.slice(0,2).toUpperCase()}
+            </div>
+          )
+        })()}
+
         {/* ── SUCCESS ── */}
         {scanResult.status === 'success' && (<>
-          <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><CheckCircle size={56} color={C.green} /></div>
-          {scanResult.attendee?.picture && <img src={scanResult.attendee.picture} style={{ width: 68, height: 68, borderRadius: '50%', objectFit: 'cover', margin: '0 auto 10px', display: 'block', border: `3px solid ${C.green}` }} />}
           <div style={{ fontSize: 22, fontWeight: 900, color: C.green, marginBottom: 4 }}>Welcome In! ✓</div>
           <div style={{ fontSize: 16, color: C.text, fontWeight: 700, marginBottom: 2 }}>{scanResult.attendee?.name}</div>
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>Marked as ATTENDED</div>
+          <div style={{ fontSize: 12, color: scanResult.published === false ? C.yellow : C.muted, marginBottom: 20 }}>
+            {scanResult.published === false ? '⚠ Saved locally — Nostr sync pending' : 'Marked as ATTENDED · Saved to Nostr'}
+          </div>
         </>)}
 
         {/* ── ALREADY CHECKED IN ── */}
         {scanResult.status === 'already' && (<>
-          <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><AlertTriangle size={56} color="#a78bfa" /></div>
-          {scanResult.attendee?.picture && <img src={scanResult.attendee.picture} style={{ width: 68, height: 68, borderRadius: '50%', objectFit: 'cover', margin: '0 auto 10px', display: 'block', border: '3px solid #a78bfa' }} />}
           <div style={{ fontSize: 20, fontWeight: 800, color: '#a78bfa', marginBottom: 4 }}>Already Checked In</div>
           <div style={{ fontSize: 15, color: C.text, fontWeight: 700, marginBottom: 2 }}>{scanResult.attendee?.name}</div>
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>This person is already inside</div>
         </>)}
 
-        {/* ── NO RSVP — valid ticket but not on list ── */}
+        {/* ── NO RSVP ── */}
         {scanResult.status === 'no_rsvp' && (<>
-          <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><AlertTriangle size={56} color="#eab308" /></div>
-          {scanResult.profile?.picture && <img src={scanResult.profile.picture} style={{ width: 68, height: 68, borderRadius: '50%', objectFit: 'cover', margin: '0 auto 10px', display: 'block', border: '3px solid #eab308' }} />}
           <div style={{ fontSize: 18, fontWeight: 800, color: '#eab308', marginBottom: 4 }}>Valid Ticket — No RSVP</div>
           <div style={{ fontSize: 15, color: C.text, fontWeight: 700, marginBottom: 2 }}>{scanResult.name}</div>
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>Ticket is mathematically valid but no RSVP found on Nostr. Relay may not have synced.</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>Valid ticket but no RSVP on Nostr. Relay may not have synced yet.</div>
           <button onClick={() => {
             const newVerified = { ...verified, [scanResult.npub]: { time: Date.now(), npub: scanResult.npub, ticketId: scanResult.ticketId } }
             setVerified(newVerified); saveVerified(newVerified); setScanResult(null)
@@ -381,8 +419,7 @@ export default function AdminRsvp() {
 
         {/* ── INVALID ── */}
         {scanResult.status === 'invalid' && (<>
-          <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><XCircle size={56} color="#ef4444" /></div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444', marginBottom: 8 }}>Invalid Ticket</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444', marginBottom: 8 }}>Invalid Ticket ✗</div>
           <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>{scanResult.msg}</div>
         </>)}
 
@@ -453,11 +490,50 @@ export default function AdminRsvp() {
         </button>
         <button onClick={exportCsv} style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, color: C.accent, padding: '13px', borderRadius: 12, fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <FileDown size={16} /> Export Attendees CSV</button>
-            <button onClick={resetAttendance} style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', color:C.red, padding:'10px 16px', borderRadius:10, fontWeight:700, fontSize:13, cursor:'pointer', width:'100%', justifyContent:'center', marginBottom:8 }}>Reset Attendance
+            <button onClick={() => { setShowReset(true); setResetPin(''); setResetMsg('') }}
+          style={{ width:'100%', background:'rgba(239,68,68,0.07)', border:`1px solid rgba(239,68,68,0.2)`, color:C.red, padding:'12px', borderRadius:12, fontWeight:700, fontSize:13, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+          <Lock size={14} /> Reset Attendance
         </button>
       </div>
 
 
+
+      {/* ── Reset Modal ── */}
+      {showReset && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{ background:C.card, border:`1px solid rgba(239,68,68,0.3)`, borderRadius:20, padding:28, width:'100%', maxWidth:360 }}>
+            <div style={{ fontSize:18, fontWeight:900, color:C.red, marginBottom:4, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}><AlertTriangle size={20} color={C.red} /> Reset Attendance</div>
+            <div style={{ fontSize:13, color:C.muted, textAlign:'center', marginBottom:20, lineHeight:1.5 }}>
+              This will mark everyone as Pending.<br/>Enter the admin pin to confirm.
+            </div>
+            <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:6, textTransform:'uppercase', letterSpacing:1 }}>Admin Pin</div>
+            <div style={{ position:'relative', marginBottom:10 }}>
+              <input
+                value={resetPin}
+                onChange={e => setResetPin(e.target.value.toUpperCase())}
+                placeholder="Enter pin…"
+                type={showPin ? 'text' : 'password'}
+                style={{ width:'100%', background:'#0a0a0a', border:`1px solid ${resetMsg.startsWith('err') ? C.red : C.border}`, borderRadius:10, padding:'12px 44px 12px 14px', color:C.accent, fontSize:15, outline:'none', fontFamily:'monospace', letterSpacing:3, boxSizing:'border-box' }}
+              />
+              <button onClick={() => setShowPin(p => !p)}
+                style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:C.muted, display:'flex', alignItems:'center' }}>
+                {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            {resetMsg && <div style={{ fontSize:12, color: resetMsg.startsWith('err') ? C.red : C.green, marginBottom:10, textAlign:'center' }}>{resetMsg.replace('err: ','')}</div>}
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => { setShowReset(false); setResetPin(''); setResetMsg('') }}
+                style={{ flex:1, background:'none', border:`1px solid ${C.border}`, color:C.muted, padding:'12px', borderRadius:10, cursor:'pointer', fontWeight:700 }}>
+                Cancel
+              </button>
+              <button onClick={confirmReset} disabled={!resetPin.trim()}
+                style={{ flex:1, background:resetPin.trim() ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.05)', border:`1px solid rgba(239,68,68,0.4)`, color:resetPin.trim() ? C.red : '#444', padding:'12px', borderRadius:10, cursor:resetPin.trim()?'pointer':'not-allowed', fontWeight:800 }}>
+                Confirm Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       {rsvps.length > 0 && (
