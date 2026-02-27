@@ -522,6 +522,8 @@ function NostrFeed({ user, onProfileClick }) {
             c.startsWith('GROUP_MEMBER:') ||
             c.startsWith('GROUP_MEMBER_REMOVE:') ||
             c.startsWith('GROUP_STATE:') ||
+            c.startsWith('ANNOUNCEMENT:') ||
+            c.startsWith('ANNOUNCEMENT_DELETE:') ||
             c.includes('DATA:{')) return
         cache.seenIds.add(event.id)
 

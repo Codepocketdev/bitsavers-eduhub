@@ -28,9 +28,7 @@ const timeAgo = (ts) => {
 
 // ─── RSVP storage ─────────────────────────────────────────────────────────────
 const getRsvps = () => { try { return JSON.parse(localStorage.getItem('bitsavers_rsvps') || '{}') } catch { return {} } }
-// isRsvped checks localStorage cache only — source of truth is Nostr
 const isRsvped = (id) => { const r = getRsvps()[id]; return r === true || (r && r.rsvped) }
-// getStoredTicketId — returns cached ticketId if exists (deterministic so same value always)
 const getStoredTicketId = (eventId) => { const r = getRsvps()[eventId]; return (r && r.ticketId) || null }
 const cacheRsvp = (eventId, ticketId) => {
   const rsvps = getRsvps()
@@ -52,16 +50,15 @@ function EventCard({ event }) {
   const [publishing, setPublishing] = useState(false)
   const [ticketReady, setTicketReady] = useState(isRsvped(event.id))
   const [publishError, setPublishError] = useState(false)
-  const [checkingNostr, setCheckingNostr] = useState(!isRsvped(event.id)) // only check if not cached
+  const [checkingNostr, setCheckingNostr] = useState(!isRsvped(event.id))
 
   const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 
-  // ── On mount: check Nostr for existing RSVP — localStorage is just a cache ──
   useEffect(() => {
-    if (isRsvped(event.id)) { setCheckingNostr(false); return } // already cached, skip
+    if (isRsvped(event.id)) { setCheckingNostr(false); return }
 
     const nsec = localStorage.getItem('bitsavers_nsec')
-    if (!nsec) { setCheckingNostr(false); return } // no key, can't check
+    if (!nsec) { setCheckingNostr(false); return }
 
     let pubkey = ''
     try {
@@ -80,7 +77,6 @@ function EventCard({ event }) {
         try {
           const data = JSON.parse(e.content.slice('RSVP:'.length))
           if (data.eventId === event.id) {
-            // Found existing RSVP on Nostr — restore lock + ticket
             const npub = nip19.npubEncode(pubkey)
             const ticketId = generateTicketId(npub, event.id)
             cacheRsvp(event.id, ticketId)
@@ -103,11 +99,8 @@ function EventCard({ event }) {
 
   const toggleRsvp = async () => {
     const next = !rsvped
-
-    // Once RSVPed the button is locked — this branch should never fire
     if (!next) return
 
-    // RSVP flow
     setAnimate(true)
     setTimeout(() => setAnimate(false), 600)
     setPublishing(true)
@@ -115,7 +108,6 @@ function EventCard({ event }) {
 
     try {
       const nsec = localStorage.getItem('bitsavers_nsec')
-      // Derive npub directly from nsec — never use localStorage npub which may be missing
       let npub = localStorage.getItem('bitsavers_npub') || ''
       if (nsec && !npub) {
         try {
@@ -125,18 +117,9 @@ function EventCard({ event }) {
         } catch {}
       }
 
-      // Deterministic ticketId — same npub+eventId always = same ticket, no Date.now()
       const ticketId = generateTicketId(npub, event.id)
 
-      // Check if already cached (user re-RSVPing after clearing storage)
-      const existing = getStoredTicketId(event.id)
-      if (existing && existing !== ticketId) {
-        // Shouldn't happen with deterministic hash, but safety check
-        console.warn('TicketId mismatch — using deterministic one')
-      }
-
       if (!nsec) {
-        // No nsec — can't publish, just show as RSVPed locally
         setRsvped(true)
         cacheRsvp(event.id, ticketId)
         setTicketReady(true)
@@ -144,7 +127,6 @@ function EventCard({ event }) {
         return
       }
 
-      // Publish to Nostr FIRST — source of truth
       const skBytes = nsecToBytes(nsec)
       const pool = getPool()
       const nostrEvent = finalizeEvent({
@@ -156,7 +138,6 @@ function EventCard({ event }) {
 
       await Promise.any(pool.publish(RELAYS, nostrEvent))
 
-      // Only after Nostr confirms — cache locally and unlock download
       cacheRsvp(event.id, ticketId)
       setRsvped(true)
       setTicketReady(true)
@@ -164,7 +145,6 @@ function EventCard({ event }) {
     } catch (e) {
       console.error('RSVP publish failed', e)
       setPublishError(true)
-      // Still mark RSVPed locally so UI doesn't confuse user
       let npub2 = localStorage.getItem('bitsavers_npub') || ''
       if (!npub2 && nsec) {
         try { const sk = nsecToBytes(nsec); npub2 = nip19.npubEncode(getPublicKey(sk)) } catch {}
@@ -179,7 +159,6 @@ function EventCard({ event }) {
   }
 
   const downloadTicket = async () => {
-    // Always derive npub from nsec — source of truth, never localStorage
     const nsec = localStorage.getItem('bitsavers_nsec')
     let npub = '', pubkey = ''
     try {
@@ -191,11 +170,9 @@ function EventCard({ event }) {
     }
     const ticketId = generateTicketId(npub, event.id)
 
-    // Start with localStorage profile
     let profile = {}
     try { profile = JSON.parse(localStorage.getItem('bitsavers_profile') || '{}') } catch {}
 
-    // If no picture, fetch fresh from Nostr
     if (!profile.picture && pubkey) {
       try {
         const pool = new SimplePool()
@@ -218,17 +195,14 @@ function EventCard({ event }) {
 
   return (
     <div style={{ background: C.card, border: `1px solid ${rsvped ? 'rgba(34,197,94,0.3)' : C.border}`, borderRadius: 16, marginBottom: 14, overflow: 'hidden', transition: 'border-color 0.3s' }}>
-      {/* Top accent bar if RSVPed */}
       {rsvped && <div style={{ height: 3, background: 'linear-gradient(90deg,#22c55e,#16a34a)', width: '100%' }} />}
 
-      {/* Cover image */}
       {event.imageUrl && (
         <img src={event.imageUrl} alt={event.title} style={{ width: '100%', display: 'block', borderRadius: '16px 16px 0 0' }} />
       )}
 
       <div style={{ padding: 18 }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 14 }}>
-          {/* Date block */}
           <div style={{ background: isPast ? 'rgba(255,255,255,0.04)' : C.dim, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 14px', textAlign: 'center', flexShrink: 0, minWidth: 56 }}>
             <div style={{ fontSize: 10, color: C.accent, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
               {new Date(event.date).toLocaleString('en', { month: 'short' })}
@@ -241,7 +215,6 @@ function EventCard({ event }) {
             </div>
           </div>
 
-          {/* Info */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ fontSize: 16, fontWeight: 800, color: isPast ? C.muted : C.text, lineHeight: 1.3 }}>{event.title}</div>
@@ -253,7 +226,6 @@ function EventCard({ event }) {
           </div>
         </div>
 
-        {/* Meta row */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: event.description ? 10 : 14 }}>
           {event.time && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.accent }}>
@@ -271,11 +243,9 @@ function EventCard({ event }) {
           <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 14 }}>{event.description}</div>
         )}
 
-        {/* Action buttons */}
         {!isPast && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', gap: 10 }}>
-              {/* RSVP button */}
               <button
                 onClick={rsvped || checkingNostr ? undefined : toggleRsvp}
                 disabled={publishing || checkingNostr}
@@ -298,7 +268,6 @@ function EventCard({ event }) {
                 }
               </button>
 
-              {/* Join/Link button */}
               {event.link && (
                 <a href={event.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
                   <button style={{ padding: '12px 18px', borderRadius: 11, fontWeight: 700, fontSize: 13, cursor: 'pointer', background: C.dim, border: `1px solid ${C.border}`, color: C.accent, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -308,7 +277,6 @@ function EventCard({ event }) {
               )}
             </div>
 
-            {/* Download ticket button — shows after RSVP */}
             {ticketReady && (
               <button onClick={downloadTicket} style={{ width: '100%', padding: '11px', borderRadius: 11, fontWeight: 700, fontSize: 13, cursor: 'pointer', background: 'rgba(247,147,26,0.08)', border: `1px solid rgba(247,147,26,0.3)`, color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <Download size={14} /> Download Ticket
@@ -317,7 +285,6 @@ function EventCard({ event }) {
           </div>
         )}
 
-        {/* Past event — just show link */}
         {isPast && event.link && (
           <a href={event.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
             <button style={{ width: '100%', padding: '10px', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer', background: C.dim, border: `1px solid ${C.border}`, color: C.muted }}>
@@ -331,23 +298,29 @@ function EventCard({ event }) {
 }
 
 export default function NewsPage() {
-  const [news, setNews] = useState([])
+  const [news, setNews] = useState(() => {
+    // Show cached announcements instantly — Nostr will update/replace in background
+    try {
+      const deleted = JSON.parse(localStorage.getItem('bitsavers_deleted_announcements') || '[]')
+      const cached = JSON.parse(localStorage.getItem('bitsavers_announcements') || '[]')
+      return cached.filter(n => !deleted.includes(n.id))
+    } catch { return [] }
+  })
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('news')
 
   useEffect(() => {
     const deletedEvents = () => { try { return JSON.parse(localStorage.getItem('bitsavers_deleted_events') || '[]') } catch { return [] } }
-    const deletedNews   = () => { try { return JSON.parse(localStorage.getItem('bitsavers_deleted_news')   || '[]') } catch { return [] } }
     const cutoff = Date.now() - 86400000
 
-    // ── 1. Show localStorage instantly ──────────────────────────────────────
+    // ── 1. Show localStorage events instantly ────────────────────────────────
     try {
       const stored = JSON.parse(localStorage.getItem('bitsavers_events') || '[]')
       setEvents(stored.filter(e => !deletedEvents().includes(e.id) && new Date(e.date) >= new Date(cutoff)))
     } catch {}
 
-    // ── 2. Fetch events from Nostr (one-time) ───────────────────────────────
+    // ── 2. Fetch events from Nostr ───────────────────────────────────────────
     const pool = getPool()
     const seenEvIds = new Set()
     const evSub = pool.subscribe(
@@ -358,7 +331,6 @@ export default function NewsPage() {
           if (seenEvIds.has(ev.id)) return
           seenEvIds.add(ev.id)
           try {
-            // Handle EVENT_DELETE signal
             if (ev.content.startsWith('EVENT_DELETE:')) {
               const { id } = JSON.parse(ev.content.slice('EVENT_DELETE:'.length))
               if (!id) return
@@ -369,7 +341,6 @@ export default function NewsPage() {
               setEvents(prev => prev.filter(e => e.id !== id))
               return
             }
-            // Handle normal event note
             const dataMatch = ev.content.match(/DATA:(\{.*\})/)
             if (!dataMatch) return
             const data = JSON.parse(dataMatch[1])
@@ -381,88 +352,78 @@ export default function NewsPage() {
             setEvents(prev => prev.find(e => e.id === data.id) ? prev : [...prev, data].sort((a,b) => new Date(a.date) - new Date(b.date)))
           } catch {}
         },
-        oneose() {} // keep open for live deletes
+        oneose() {}
       }
     )
 
-    // ── 3. Fetch news from Nostr (one-time batch) ───────────────────────────
-    const pool2 = getPool()
-    const seen = new Set()
-    const batch = []
+    // ── 3. Live WebSocket for announcements — show immediately, no batching ──
+    const newsSeen = new Set()
+    const newsClosers = []
 
-    const newsSub = pool2.subscribe(
-      RELAYS,
-      { kinds: [1], '#t': ['bitsavers-news'], since: Math.floor(Date.now()/1000) - 30*86400, limit: 50 },
-      {
-        onevent(e) {
-          if (seen.has(e.id) || !e.content?.trim()) return
-          seen.add(e.id)
-          // Handle NEWS_DELETE signal
-          if (e.content.startsWith('NEWS_DELETE:')) {
-            try {
-              const { id } = JSON.parse(e.content.slice('NEWS_DELETE:'.length))
-              if (!id) return
-              const del = deletedNews()
-              if (!del.includes(id)) localStorage.setItem('bitsavers_deleted_news', JSON.stringify([...del, id]))
-              localStorage.setItem('bitsavers_news', JSON.stringify(
-                JSON.parse(localStorage.getItem('bitsavers_news') || '[]').filter(n => n.id !== id)
-              ))
-              setNews(prev => prev.filter(n => n.id !== id))
-            } catch {}
-            return
-          }
-          // Skip all internal protocol notes
-          const c = e.content
-          if (c.includes('DATA:{') ||
-              c.startsWith('DELETED:') ||
-              c.startsWith('RSVP:') ||
-              c.startsWith('VERIFY:') ||
-              c.startsWith('EVENT:') ||
-              c.startsWith('EVENT_DELETE:') ||
-              c.startsWith('NEWS_DELETE:') ||
-              c.startsWith('ASSESSMENT_CREATE:') ||
-              c.startsWith('ASSESSMENT_DELETE:') ||
-              c.startsWith('SUBMISSION:') ||
-              c.startsWith('PRESENCE_ONLINE:') ||
-              c.startsWith('PRESENCE_OFFLINE:') ||
-              c.startsWith('POW_BLOCK:') ||
-              c.startsWith('POW_DELETE:') ||
-              c.startsWith('BLOG_POST:') ||
-              c.startsWith('BLOG_DELETE:') ||
-              c.startsWith('SPONSORS:') ||
-              c.startsWith('GALLERY:') ||
-              c.startsWith('FOLLOWING:') ||
-              c.startsWith('COURSES:') ||
-              c.startsWith('SOCIALS:') ||
-              c.startsWith('GROUP:') ||
-              c.startsWith('GROUP_DELETE:') ||
-              c.startsWith('GROUP_REQUEST:') ||
-              c.startsWith('GROUP_APPROVED:') ||
-              c.startsWith('GROUP_REJECTED:') ||
-              c.startsWith('GROUP_MEMBER:') ||
-              c.startsWith('GROUP_MEMBER_REMOVE:') ||
-            c.startsWith('GROUP_STATE:')) return
-          // Skip if this news ID was deleted
-          if (deletedNews().includes(e.id)) return
-          batch.push(e)
-        },
-        oneose() {
-          setNews(batch.sort((a,b) => b.created_at - a.created_at))
-          setLoading(false)
+    const openNewsWS = (relayUrl) => {
+      let ws, closed = false
+      const subId = 'ann-' + Math.random().toString(36).slice(2, 8)
+      const connect = () => {
+        ws = new WebSocket(relayUrl)
+        ws.onopen = () => ws.send(JSON.stringify(['REQ', subId, {
+          kinds: [1], '#t': ['bitsavers-announcement'],
+          since: Math.floor(Date.now() / 1000) - 90 * 86400, limit: 100
+        }]))
+        ws.onmessage = ({ data }) => {
+          try {
+            const msg = JSON.parse(data)
+            if (msg[0] === 'EVENT') {
+              const e = msg[2]
+              if (newsSeen.has(e.id)) return
+              newsSeen.add(e.id)
+              if (e.content.startsWith('ANNOUNCEMENT_DELETE:')) {
+                try {
+                  const { id } = JSON.parse(e.content.slice('ANNOUNCEMENT_DELETE:'.length))
+                  // Persist deletion blocklist
+                  const del = JSON.parse(localStorage.getItem('bitsavers_deleted_announcements') || '[]')
+                  if (!del.includes(id)) localStorage.setItem('bitsavers_deleted_announcements', JSON.stringify([...del, id]))
+                  // Remove from localStorage cache
+                  const cached = JSON.parse(localStorage.getItem('bitsavers_announcements') || '[]')
+                  localStorage.setItem('bitsavers_announcements', JSON.stringify(cached.filter(n => n.id !== id)))
+                  setNews(prev => prev.filter(n => n.id !== id))
+                } catch {}
+                return
+              }
+              if (!e.content.startsWith('ANNOUNCEMENT:')) return
+              try {
+                const d = JSON.parse(e.content.slice('ANNOUNCEMENT:'.length))
+                // Skip if previously deleted
+                const deleted = JSON.parse(localStorage.getItem('bitsavers_deleted_announcements') || '[]')
+                if (deleted.includes(d.id)) return
+                // Save to localStorage cache so next load is instant
+                const cached = JSON.parse(localStorage.getItem('bitsavers_announcements') || '[]')
+                if (!cached.find(n => n.id === d.id)) {
+                  localStorage.setItem('bitsavers_announcements', JSON.stringify([d, ...cached].slice(0, 50)))
+                }
+                setNews(prev => {
+                  if (prev.find(n => n.id === d.id)) return prev
+                  return [d, ...prev].sort((a, b) => b.publishedAt - a.publishedAt)
+                })
+                setLoading(false)
+              } catch {}
+            }
+            if (msg[0] === 'EOSE') {
+              // Hide spinner as soon as any relay responds
+              setLoading(false)
+            }
+          } catch {}
         }
+        ws.onclose = () => { if (!closed) setTimeout(connect, 3000) }
       }
-    )
+      connect()
+      newsClosers.push(() => { closed = true; ws?.close() })
+    }
+
+    RELAYS.forEach(openNewsWS)
 
     setTimeout(() => setLoading(false), 8000)
-    return () => { evSub.close(); newsSub.close() }
+    return () => { evSub.close(); newsClosers.forEach(c => c()) }
   }, [])
-
-  const parseNewsContent = (content) => {
-    const lines = content.split('\n\n')
-    const title = lines[0] || ''
-    const body = lines.slice(1).join('\n\n')
-    return { title, body }
-  }
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto' }}>
@@ -496,26 +457,21 @@ export default function NewsPage() {
               <div style={{ fontSize: 13, color: C.muted }}>Check back soon for updates from the team.</div>
             </div>
           )}
-          {news.map(item => {
-            const { title, body } = parseNewsContent(item.content)
-            // Check for image URL in content
-            const imgMatch = item.content.match(/https?:\/\/\S+\.(jpg|jpeg|png|gif|webp)/i)
-            return (
-              <div key={item.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, marginBottom: 14, overflow: 'hidden' }}>
-                {imgMatch && (
-                  <img src={imgMatch[0]} alt="" style={{ width: '100%', display: 'block' }} onError={e => e.target.style.display='none'} />
-                )}
-                <div style={{ padding: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <span style={{ background: C.accent, color: C.bg, fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 20, letterSpacing: 0.5 }}>ANNOUNCEMENT</span>
-                    <span style={{ fontSize: 11, color: C.muted }}>{timeAgo(item.created_at)}</span>
-                  </div>
-                  {title && <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 8, lineHeight: 1.3 }}>{title}</div>}
-                  {body && <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.7 }}>{body}</div>}
+          {news.map(item => (
+            <div key={item.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, marginBottom: 14, overflow: 'hidden' }}>
+              {item.imageUrl && (
+                <img src={item.imageUrl} alt="" style={{ width: '100%', display: 'block', maxHeight: 240, objectFit: 'cover' }} onError={e => e.target.style.display='none'} />
+              )}
+              <div style={{ padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <span style={{ background: C.accent, color: C.bg, fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 20, letterSpacing: 0.5 }}>ANNOUNCEMENT</span>
+                  <span style={{ fontSize: 11, color: C.muted }}>{timeAgo(item.publishedAt)}</span>
                 </div>
+                {item.title && <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 8, lineHeight: 1.3 }}>{item.title}</div>}
+                {item.body && <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.7 }}>{item.body}</div>}
               </div>
-            )
-          })}
+            </div>
+          ))}
         </>
       )}
 

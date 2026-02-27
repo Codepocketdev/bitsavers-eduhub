@@ -246,53 +246,151 @@ function ManageAdmins({ user }) {
 }
 
 // ─── Publish News ─────────────────────────────────────────────────────────────
+// Publishes as ANNOUNCEMENT:{json} tagged bitsavers-announcement
+// Delete signal: ANNOUNCEMENT_DELETE:{id} — picked up live by all clients
+
+const publishAnnouncementDelete = async (id) => {
+  const storedNsec = localStorage.getItem('bitsavers_nsec')
+  if (!storedNsec) return
+  try {
+    const skBytes = nsecToBytes(storedNsec)
+    const pool = getPool()
+    const event = finalizeEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['t', 'bitsavers'], ['t', 'bitsavers-announcement']],
+      content: 'ANNOUNCEMENT_DELETE:' + JSON.stringify({ id }),
+    }, skBytes)
+    await Promise.any(pool.publish(RELAYS, event))
+  } catch(e) { console.error('Failed to publish announcement delete:', e) }
+}
+
 function PublishNews({ user }) {
   const [title, setTitle] = useState('')
-  const [content, setContent] = useState('')
+  const [body, setBody] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [msg, setMsg] = useState('')
-  const [newsList, setNewsList] = useState(() => {
-    const stored = localStorage.getItem('bitsavers_news')
-    return stored ? JSON.parse(stored) : []
+  const [list, setList] = useState(() => {
+    // Show cache instantly — Nostr updates in background
+    try {
+      const deleted = JSON.parse(localStorage.getItem('bitsavers_deleted_announcements') || '[]')
+      const cached = JSON.parse(localStorage.getItem('bitsavers_announcements') || '[]')
+      return cached.filter(n => !deleted.includes(n.id))
+    } catch { return [] }
+  })
+  const [loadingList, setLoadingList] = useState(() => {
+    // Only show spinner if cache is empty
+    try {
+      const cached = JSON.parse(localStorage.getItem('bitsavers_announcements') || '[]')
+      return cached.length === 0
+    } catch { return true }
   })
 
+  // Load existing announcements from Nostr — show immediately, no batching
+  useEffect(() => {
+    const seen = new Set()
+    const closers = []
+
+    const openWS = (relayUrl) => {
+      let ws, closed = false
+      const subId = 'adm-ann-' + Math.random().toString(36).slice(2, 8)
+      const connect = () => {
+        ws = new WebSocket(relayUrl)
+        ws.onopen = () => ws.send(JSON.stringify(['REQ', subId, {
+          kinds: [1], '#t': ['bitsavers-announcement'],
+          since: Math.floor(Date.now() / 1000) - 90 * 86400, limit: 100
+        }]))
+        ws.onmessage = ({ data }) => {
+          try {
+            const msg = JSON.parse(data)
+            if (msg[0] === 'EVENT') {
+              const e = msg[2]
+              if (seen.has(e.id)) return
+              seen.add(e.id)
+              if (e.content.startsWith('ANNOUNCEMENT_DELETE:')) {
+                try {
+                  const { id } = JSON.parse(e.content.slice('ANNOUNCEMENT_DELETE:'.length))
+                  // Persist deletion so relay re-sends don't bring it back
+                  const del = JSON.parse(localStorage.getItem('bitsavers_deleted_announcements') || '[]')
+                  if (!del.includes(id)) localStorage.setItem('bitsavers_deleted_announcements', JSON.stringify([...del, id]))
+                  setList(prev => prev.filter(n => n.id !== id))
+                } catch {}
+                return
+              }
+              if (!e.content.startsWith('ANNOUNCEMENT:')) return
+              try {
+                const d = JSON.parse(e.content.slice('ANNOUNCEMENT:'.length))
+                // Skip if previously deleted
+                const deleted = JSON.parse(localStorage.getItem('bitsavers_deleted_announcements') || '[]')
+                if (deleted.includes(d.id)) return
+                // Save to localStorage cache
+                const cached = JSON.parse(localStorage.getItem('bitsavers_announcements') || '[]')
+                if (!cached.find(n => n.id === d.id)) {
+                  localStorage.setItem('bitsavers_announcements', JSON.stringify([d, ...cached].slice(0, 50)))
+                }
+                setList(prev => {
+                  if (prev.find(n => n.id === d.id)) return prev
+                  return [d, ...prev].sort((a, b) => b.publishedAt - a.publishedAt)
+                })
+                setLoadingList(false)
+              } catch {}
+            }
+            if (msg[0] === 'EOSE') {
+              // Hide spinner on first relay response
+              setLoadingList(false)
+            }
+          } catch {}
+        }
+        ws.onclose = () => { if (!closed) setTimeout(connect, 3000) }
+      }
+      connect()
+      closers.push(() => { closed = true; ws?.close() })
+    }
+
+    RELAYS.forEach(openWS)
+    setTimeout(() => setLoadingList(false), 8000)
+    return () => closers.forEach(c => c())
+  }, [])
+
   const publish = async () => {
-    if (!title.trim() || !content.trim()) { setMsg('err: Title and content required'); return }
+    if (!title.trim() || !body.trim()) { setMsg('err: Title and content required'); return }
     setPublishing(true); setMsg('')
     try {
       const storedNsec = localStorage.getItem('bitsavers_nsec')
       if (!storedNsec) throw new Error('No private key found')
       const skBytes = nsecToBytes(storedNsec)
       const pool = getPool()
+      const id = Date.now().toString()
+      const publishedAt = Math.floor(Date.now() / 1000)
+      const announcement = { id, title: title.trim(), body: body.trim(), imageUrl, publishedAt }
       const event = finalizeEvent({
         kind: 1,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [['t', 'bitsavers'], ['t', 'bitsavers-news'], ['subject', title.trim()]],
-        content: `${title.trim()}\n\n${content.trim()}${imageUrl ? '\n\n' + imageUrl : ''}`,
+        created_at: publishedAt,
+        tags: [['t', 'bitsavers'], ['t', 'bitsavers-announcement']],
+        content: 'ANNOUNCEMENT:' + JSON.stringify(announcement),
       }, skBytes)
       await Promise.any(pool.publish(RELAYS, event))
-
-      const newsItem = { id: event.id, title: title.trim(), content: content.trim(), imageUrl, publishedAt: event.created_at }
-      const updated = [newsItem, ...newsList].slice(0, 50)
-      setNewsList(updated)
-      localStorage.setItem('bitsavers_news', JSON.stringify(updated))
-
-      setTitle(''); setContent(''); setImageUrl('')
-      setMsg('ok: News published to Nostr!')
+      // Save to localStorage cache immediately on publish
+      const cached = JSON.parse(localStorage.getItem('bitsavers_announcements') || '[]')
+      localStorage.setItem('bitsavers_announcements', JSON.stringify([announcement, ...cached].slice(0, 50)))
+      setList(prev => [announcement, ...prev])
+      setTitle(''); setBody(''); setImageUrl('')
+      setMsg('ok: Announcement published to Nostr!')
     } catch (e) { setMsg('err: ' + (e.message || 'Failed to publish')) }
     setPublishing(false)
+    setTimeout(() => setMsg(''), 3000)
   }
 
-  const deleteNews = async (id) => {
-    const updated = newsList.filter(n => n.id !== id)
-    setNewsList(updated)
-    localStorage.setItem('bitsavers_news', JSON.stringify(updated))
-    // Track deleted so it doesn't reappear
-    const deleted = JSON.parse(localStorage.getItem('bitsavers_deleted_news') || '[]')
-    if (!deleted.includes(id)) localStorage.setItem('bitsavers_deleted_news', JSON.stringify([...deleted, id]))
-    // Publish delete signal so all user devices purge it immediately
-    await publishNewsDelete(id)
+  const deleteAnnouncement = async (id) => {
+    // Write to blocklist immediately — survives relay re-sends and reconnects
+    const del = JSON.parse(localStorage.getItem('bitsavers_deleted_announcements') || '[]')
+    if (!del.includes(id)) localStorage.setItem('bitsavers_deleted_announcements', JSON.stringify([...del, id]))
+    // Remove from localStorage cache immediately
+    const cached = JSON.parse(localStorage.getItem('bitsavers_announcements') || '[]')
+    localStorage.setItem('bitsavers_announcements', JSON.stringify(cached.filter(n => n.id !== id)))
+    setList(prev => prev.filter(n => n.id !== id))
+    await publishAnnouncementDelete(id)
   }
 
   return (
@@ -300,31 +398,35 @@ function PublishNews({ user }) {
       <Card>
         <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Megaphone size={16} color={C.accent} /> Publish Announcement</div>
         <Input label="Title" value={title} onChange={setTitle} placeholder="e.g. New Course: Lightning Network 101" />
-        <Textarea label="Content" value={content} onChange={setContent} placeholder="Write your announcement here…" rows={5} />
+        <Textarea label="Content" value={body} onChange={setBody} placeholder="Write your announcement here…" rows={5} />
         <div style={{ marginBottom: 14 }}>
           <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, display: 'block', marginBottom: 10 }}>Cover Image (optional)</label>
           <ImageUpload currentUrl={imageUrl} onUploaded={setImageUrl} size={70} />
         </div>
         <StatusMsg msg={msg} />
-        <Btn onClick={publish} disabled={publishing || !title.trim() || !content.trim()}>
-          {publishing ? 'Publishing…' : 'Publish News'}
+        <Btn onClick={publish} disabled={publishing || !title.trim() || !body.trim()}>
+          {publishing ? 'Publishing…' : 'Publish Announcement'}
         </Btn>
       </Card>
 
-      {newsList.length > 0 && (
+      {(loadingList || list.length > 0) && (
         <Card>
-          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 }}>Published News ({newsList.length})</div>
-          {newsList.map(item => (
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {loadingList
+              ? <><Loader size={13} style={{ animation: 'spin 1s linear infinite', color: C.accent }} /> Loading from Nostr…</>
+              : `Published Announcements (${list.length})`}
+          </div>
+          {list.map(item => (
             <div key={item.id} style={{ padding: '14px 0', borderBottom: `1px solid ${C.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 4 }}>{item.title}</div>
-                  <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>{item.content.slice(0, 100)}…</div>
+                  <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>{item.body?.slice(0, 100)}…</div>
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 6, fontFamily: 'monospace' }}>
                     {new Date(item.publishedAt * 1000).toLocaleDateString()}
                   </div>
                 </div>
-                <Btn onClick={() => deleteNews(item.id)} variant="danger" style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0 }}>Delete</Btn>
+                <Btn onClick={() => deleteAnnouncement(item.id)} variant="danger" style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0 }}>Delete</Btn>
               </div>
             </div>
           ))}
@@ -337,14 +439,12 @@ function PublishNews({ user }) {
 // ─── Events ───────────────────────────────────────────────────────────────────
 const RELAYS_EV = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 
-// Publish event as kind:1 — same proven approach as announcements
 const publishEventToNostr = async (eventData) => {
   const storedNsec = localStorage.getItem('bitsavers_nsec')
   if (!storedNsec) return false
   try {
     const skBytes = nsecToBytes(storedNsec)
     const pool = getPool()
-    // Build human-readable content so it looks good on Nostr clients too
     const lines = [
       '📅 ' + eventData.title,
       eventData.date + (eventData.time ? ' at ' + eventData.time : ''),
@@ -367,7 +467,6 @@ const publishEventToNostr = async (eventData) => {
       content: text,
     }, skBytes)
     await Promise.any(pool.publish(RELAYS_EV, ev))
-    // Store event id so we can reference it
     const updated = JSON.parse(localStorage.getItem('bitsavers_events') || '[]')
     const idx = updated.findIndex(e => e.id === eventData.id)
     if (idx >= 0) { updated[idx].nostrId = ev.id; localStorage.setItem('bitsavers_events', JSON.stringify(updated)) }
@@ -498,7 +597,6 @@ function ManageEvents({ user }) {
         <Textarea label="Description" value={form.description} onChange={v => set('description', v)} placeholder="What will be covered?" rows={3} />
         <Input label="Join Link (optional)" icon={<Link2 size={11}/>} value={form.link} onChange={v => set('link', v)} placeholder="https://meet.jit.si/..." />
 
-        {/* Cover image — same pattern as News */}
         <div style={{ marginBottom: 14 }}>
           <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}><span style={{display:'flex',alignItems:'center',color:C.accent}}><Image size={11}/></span>Cover Image (optional)</label>
           <ImageUpload currentUrl={form.imageUrl} onUploaded={url => set('imageUrl', url)} size={70} />
@@ -644,11 +742,9 @@ function MediaLibrary() {
 }
 
 // ─── Main Admin Panel ─────────────────────────────────────────────────────────
-// spin keyframe injected via style tag in render
 export default function AdminPanel({ user }) {
   const [section, setSection] = useState('admins')
 
-  // Check if user is admin
   if (!user?.npub || !isAdmin(user.npub)) {
     return (
       <div style={{ textAlign: 'center', paddingTop: 80 }}>
