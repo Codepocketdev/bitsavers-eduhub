@@ -20,7 +20,6 @@ const getAssessments = () => { try { return JSON.parse(localStorage.getItem('bit
 const getResults     = () => { try { return JSON.parse(localStorage.getItem('bitsavers_results')    || '[]') } catch { return [] } }
 const saveResults    = (r) => localStorage.setItem('bitsavers_results', JSON.stringify(r))
 
-// FIX: cohorts stored as object {code: cohort}, not array
 const getCohorts = () => {
   try {
     const raw = JSON.parse(localStorage.getItem('bitsavers_cohorts') || '{}')
@@ -28,13 +27,81 @@ const getCohorts = () => {
   } catch { return [] }
 }
 
-// FIX: joins stored separately in bitsavers_joins, not inside cohort objects
-const getJoinedMembers = (cohortCode) => {
-  try {
-    const joins = JSON.parse(localStorage.getItem('bitsavers_joins') || '{}')
-    const cohortJoins = joins[cohortCode] || {}
-    return Object.values(cohortJoins).filter(m => m.action === 'joined')
-  } catch { return [] }
+// ─── Hook: fetch enrolled members for a cohort FROM NOSTR ─────────────────────
+// This is the key fix — admin device may never have bitsavers_joins populated,
+// so we subscribe to Nostr join events directly, same as CohortsPage does.
+function useCohortMembers(cohortCode) {
+  const [members, setMembers] = useState(() => {
+    try {
+      const joins = JSON.parse(localStorage.getItem('bitsavers_joins') || '{}')
+      const cohortJoins = joins[cohortCode] || {}
+      return Object.values(cohortJoins).filter(m => m.action === 'joined')
+    } catch { return [] }
+  })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!cohortCode) { setLoading(false); return }
+
+    const joinsMap = {}
+    const seen = new Set()
+    const closers = []
+
+    const flush = () => {
+      const joined = Object.values(joinsMap).filter(m => m.action === 'joined')
+      setMembers(joined)
+      setLoading(false)
+      try {
+        const stored = JSON.parse(localStorage.getItem('bitsavers_joins') || '{}')
+        if (!stored[cohortCode]) stored[cohortCode] = {}
+        Object.entries(joinsMap).forEach(([npub, data]) => {
+          const ex = stored[cohortCode][npub]
+          if (!ex || data.ts > ex.ts) stored[cohortCode][npub] = data
+        })
+        localStorage.setItem('bitsavers_joins', JSON.stringify(stored))
+      } catch {}
+    }
+
+    const openWS = (url, filter) => {
+      let ws, closed = false
+      const subId = 'mbr-' + Math.random().toString(36).slice(2, 8)
+      const go = () => {
+        if (closed) return
+        ws = new WebSocket(url)
+        ws.onopen = () => ws.send(JSON.stringify(['REQ', subId, filter]))
+        ws.onmessage = ({ data }) => {
+          try {
+            const msg = JSON.parse(data)
+            if (msg[0] === 'EVENT' && msg[1] === subId) {
+              const e = msg[2]
+              if (seen.has(e.id)) return
+              seen.add(e.id)
+              const m = e.content.match(/^(joined|left)-([A-Z0-9]+)-([^ |]+)[| ](.+)$/)
+              if (m) {
+                const [, action, code, npub, name] = m
+                if (code !== cohortCode) return
+                const ex = joinsMap[npub]
+                if (!ex || e.created_at > ex.ts)
+                  joinsMap[npub] = { action, ts: e.created_at, name: name.trim(), npub }
+                flush()
+              }
+            }
+            if (msg[0] === 'EOSE') flush()
+          } catch {}
+        }
+        ws.onclose = () => { if (!closed) setTimeout(go, 3000) }
+      }
+      go()
+      closers.push(() => { closed = true; ws?.close() })
+    }
+
+    RELAYS.forEach(r => openWS(r, { kinds: [1], '#t': ['bitsavers-cohort'],  limit: 500 }))
+    RELAYS.forEach(r => openWS(r, { kinds: [1], '#t': ['bitsavers-cohorts'], limit: 500 }))
+    setTimeout(() => setLoading(false), 8000)
+    return () => closers.forEach(c => c())
+  }, [cohortCode])
+
+  return { members, loading }
 }
 
 // ─── Fetch submissions from Nostr ─────────────────────────────────────────────
@@ -43,28 +110,23 @@ const fetchNostrSubmissions = (assessmentId) => new Promise((resolve) => {
   const found = []
   const seen = new Set()
   const tag = `bitsavers-sub-${assessmentId}`
-
-  const sub = pool.subscribe(
-    RELAYS,
-    { kinds: [1], '#t': [tag], limit: 500 },
-    {
-      onevent(e) {
-        if (seen.has(e.id)) return
-        seen.add(e.id)
-        try {
-          const match = e.content.match(/SUBMISSION:(\{.+\})$/)
-          if (!match) return
-          const data = JSON.parse(match[1])
-          if (data.assessmentId === assessmentId) found.push({ ...data, nostrId: e.id })
-        } catch {}
-      },
-      oneose() { sub.close(); resolve(found) }
-    }
-  )
+  const sub = pool.subscribe(RELAYS, { kinds: [1], '#t': [tag], limit: 500 }, {
+    onevent(e) {
+      if (seen.has(e.id)) return
+      seen.add(e.id)
+      try {
+        const match = e.content.match(/SUBMISSION:(\{.+\})$/)
+        if (!match) return
+        const data = JSON.parse(match[1])
+        if (data.assessmentId === assessmentId) found.push({ ...data, nostrId: e.id })
+      } catch {}
+    },
+    oneose() { sub.close(); resolve(found) }
+  })
   setTimeout(() => { sub.close(); resolve(found) }, 8000)
 })
 
-// ─── Send Nostr DM (kind:4) ───────────────────────────────────────────────────
+// ─── Send Nostr DM ────────────────────────────────────────────────────────────
 const sendDM = async (toNpub, message) => {
   const nsec = localStorage.getItem('bitsavers_nsec')
   if (!nsec) throw new Error('No private key stored')
@@ -73,10 +135,8 @@ const sendDM = async (toNpub, message) => {
   const encrypted = await nip04.encrypt(skBytes, toPubkey, message)
   const pool = getPool()
   const event = finalizeEvent({
-    kind: 4,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [['p', toPubkey]],
-    content: encrypted,
+    kind: 4, created_at: Math.floor(Date.now() / 1000),
+    tags: [['p', toPubkey]], content: encrypted,
   }, skBytes)
   await Promise.any(pool.publish(RELAYS, event))
 }
@@ -94,9 +154,7 @@ function DMModal({ student, onClose }) {
       await sendDM(student.npub, msg.trim())
       setStatus({ ok: true, text: 'DM sent via Nostr!' })
       setMsg('')
-    } catch (e) {
-      setStatus({ ok: false, text: e.message || 'Failed to send' })
-    }
+    } catch (e) { setStatus({ ok: false, text: e.message || 'Failed to send' }) }
     setSending(false)
   }
 
@@ -110,26 +168,20 @@ function DMModal({ student, onClose }) {
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}><X size={16} /></button>
         </div>
-
         <div style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace', marginBottom: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {student.npub?.slice(0, 32)}…
         </div>
-
         <textarea value={msg} onChange={e => setMsg(e.target.value)}
           placeholder="Write feedback, flag an issue, or send encouragement…" rows={5}
           style={{ width: '100%', boxSizing: 'border-box', background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px', color: C.text, fontSize: 14, resize: 'vertical', fontFamily: 'inherit', outline: 'none', marginBottom: 12 }} />
-
         {status && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: status.ok ? C.green : C.red, marginBottom: 12 }}>
             {status.ok ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
             {status.text}
           </div>
         )}
-
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, padding: '10px', borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-            Cancel
-          </button>
+          <button onClick={onClose} style={{ flex: 1, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, padding: '10px', borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
           <button onClick={send} disabled={sending || !msg.trim()} style={{ flex: 2, background: C.accent, border: 'none', color: '#000', padding: '10px', borderRadius: 9, fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: (!msg.trim() || sending) ? 0.6 : 1 }}>
             {sending ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={13} />}
             {sending ? 'Sending…' : 'Send DM'}
@@ -144,7 +196,6 @@ function DMModal({ student, onClose }) {
 function SubmissionCard({ result, questions }) {
   const [open, setOpen]         = useState(false)
   const [dmTarget, setDmTarget] = useState(null)
-
   const mcqQs    = questions.filter(q => q.type === 'mcq')
   const openQs   = questions.filter(q => q.type === 'open')
   const initials = (result.name || '?').slice(0, 2).toUpperCase()
@@ -157,14 +208,12 @@ function SubmissionCard({ result, questions }) {
             ? <img src={result.picture} alt={initials} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.target.style.display = 'none' }} />
             : initials}
         </div>
-
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{result.name}</div>
           <div style={{ fontSize: 10, color: C.muted, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {result.npub?.slice(0, 24)}…
           </div>
         </div>
-
         <div style={{ textAlign: 'right', flexShrink: 0, marginRight: 8 }}>
           {result.score && (
             <div style={{ fontSize: 17, fontWeight: 900, color: result.correct === result.mcqTotal && result.mcqTotal > 0 ? C.green : C.accent }}>
@@ -174,7 +223,6 @@ function SubmissionCard({ result, questions }) {
           <div style={{ fontSize: 10, color: C.muted }}>{new Date(result.submittedAt).toLocaleString()}</div>
           {result.autoSubmitted && <div style={{ fontSize: 10, color: C.red }}>⏰ Time out</div>}
         </div>
-
         <button onClick={() => setOpen(p => !p)} style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 7, padding: '5px 8px', cursor: 'pointer' }}>
           {open ? <EyeOff size={13} /> : <Eye size={13} />}
         </button>
@@ -200,7 +248,6 @@ function SubmissionCard({ result, questions }) {
               })}
             </div>
           )}
-
           {openQs.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Open-Ended Answers</div>
@@ -214,13 +261,11 @@ function SubmissionCard({ result, questions }) {
               ))}
             </div>
           )}
-
           <button onClick={() => setDmTarget(result)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: C.dim, border: `1px solid ${C.border}`, color: C.accent, padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
             <MessageSquare size={13} /> Send DM
           </button>
         </div>
       )}
-
       {dmTarget && <DMModal student={dmTarget} onClose={() => setDmTarget(null)} />}
     </div>
   )
@@ -235,9 +280,12 @@ function AssessmentSubmissions({ assessment, cohort }) {
 
   const questions = assessment.questions || []
 
-  // FIX: get members from joins storage, not cohort.students (doesn't exist)
-  const members = cohort ? getJoinedMembers(cohort.code) : []
-  const pending = members.filter(m => !results.find(r => r.npub === m.npub))
+  // Fetch members from Nostr — works on admin device with empty localStorage
+  const { members, loading: loadingMembers } = useCohortMembers(cohort?.code)
+
+  // pending = enrolled who haven't submitted (trim+lowercase to avoid npub mismatches)
+  const submittedNpubs = new Set(results.map(r => r.npub?.trim().toLowerCase()))
+  const pending = members.filter(m => !submittedNpubs.has(m.npub?.trim().toLowerCase()))
 
   const sync = async () => {
     setFetching(true)
@@ -245,7 +293,7 @@ function AssessmentSubmissions({ assessment, cohort }) {
     setResults(prev => {
       const merged = [...prev]
       nostr.forEach(nr => {
-        const idx = merged.findIndex(r => r.npub === nr.npub)
+        const idx = merged.findIndex(r => r.npub?.trim() === nr.npub?.trim())
         if (idx === -1) merged.push(nr)
         else if (nr.submittedAt > merged[idx].submittedAt) merged[idx] = nr
       })
@@ -269,16 +317,15 @@ function AssessmentSubmissions({ assessment, cohort }) {
           <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
             {cohort && <span style={{ fontSize: 11, color: C.accent, fontFamily: 'monospace' }}>{cohort.code}</span>}
             <span style={{ fontSize: 11, color: C.muted }}>{questions.length} questions</span>
-            <span style={{ fontSize: 11, color: C.muted }}>{members.length} enrolled</span>
+            <span style={{ fontSize: 11, color: C.muted }}>{loadingMembers ? '…' : members.length} enrolled</span>
           </div>
         </div>
-
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
           <div style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '4px 10px', textAlign: 'center' }}>
             <div style={{ fontSize: 16, fontWeight: 900, color: C.green }}>{results.length}</div>
             <div style={{ fontSize: 9, color: C.green }}>done</div>
           </div>
-          {pending.length > 0 && (
+          {!loadingMembers && pending.length > 0 && (
             <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '4px 10px', textAlign: 'center' }}>
               <div style={{ fontSize: 16, fontWeight: 900, color: C.red }}>{pending.length}</div>
               <div style={{ fontSize: 9, color: C.red }}>pend</div>
@@ -298,7 +345,13 @@ function AssessmentSubmissions({ assessment, cohort }) {
             {synced && <span style={{ fontSize: 10, color: C.muted }}>Last sync: {synced.toLocaleTimeString()}</span>}
           </div>
 
-          {pending.length > 0 && (
+          {loadingMembers && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.muted, fontSize: 12, marginBottom: 12 }}>
+              <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> Loading enrolled students from Nostr…
+            </div>
+          )}
+
+          {!loadingMembers && pending.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <AlertCircle size={11} color={C.red} /> Awaiting ({pending.length})
@@ -367,7 +420,6 @@ export default function AdminSubmissions() {
         <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Submission Tracker</span>
         <span style={{ fontSize: 12, color: C.muted }}>— click an assessment to view</span>
       </div>
-
       {assessments.map(a => {
         const cohort = cohorts.find(c => c.id === a.cohortId)
         return <AssessmentSubmissions key={a.id} assessment={a} cohort={cohort} />
