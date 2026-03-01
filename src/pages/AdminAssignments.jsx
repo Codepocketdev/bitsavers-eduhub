@@ -1,30 +1,24 @@
 import { useState } from 'react'
-import { Plus, Trash2, Clock, ChevronDown, ChevronUp, Loader } from 'lucide-react'
+import { Plus, Trash2, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import { getPool, nsecToBytes } from '../lib/nostr'
 import { finalizeEvent } from 'nostr-tools/pure'
 
 const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
 const ASSESSMENT_TAG = 'bitsavers-assessment'
 
-// Publish assessment deletion tombstone to Nostr
 const publishAssessmentDelete = async (assessmentId, assessmentTitle) => {
   const storedNsec = localStorage.getItem('bitsavers_nsec')
   if (!storedNsec) return
   try {
     const skBytes = nsecToBytes(storedNsec)
     const pool = getPool()
-    // kind:1 delete note — same tag as create so single subscription catches both
     const event = finalizeEvent({
       kind: 1,
       created_at: Math.floor(Date.now() / 1000),
-      tags: [
-        ['t', 'bitsavers'],
-        ['t', ASSESSMENT_TAG],
-      ],
+      tags: [['t', 'bitsavers'], ['t', ASSESSMENT_TAG]],
       content: 'ASSESSMENT_DELETE:' + JSON.stringify({ id: assessmentId, title: assessmentTitle }),
     }, skBytes)
     await Promise.any(pool.publish(RELAYS, event))
-    console.log('✓ Assessment deletion published to Nostr:', assessmentTitle)
   } catch(e) { console.error('Failed to publish deletion:', e) }
 }
 
@@ -38,25 +32,26 @@ const C = {
 const getAssessments = () => { try { return JSON.parse(localStorage.getItem('bitsavers_assessments') || '[]') } catch { return [] } }
 const saveAssessments = (a) => localStorage.setItem('bitsavers_assessments', JSON.stringify(a))
 const getResults = () => { try { return JSON.parse(localStorage.getItem('bitsavers_results') || '[]') } catch { return [] } }
-const getCohorts = () => { try { return JSON.parse(localStorage.getItem('bitsavers_cohorts') || '[]') } catch { return [] } }
 
-// Publish assessment to Nostr so students on any device can see it
+// FIX: cohorts are stored as an OBJECT {code: cohort}, not an array
+const getCohorts = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('bitsavers_cohorts') || '{}')
+    // Handle both formats just in case
+    return Array.isArray(raw) ? raw : Object.values(raw)
+  } catch { return [] }
+}
+
 const publishAssessmentToNostr = async (assessment) => {
   const storedNsec = localStorage.getItem('bitsavers_nsec')
   if (!storedNsec) return
   try {
     const skBytes = nsecToBytes(storedNsec)
     const pool = getPool()
-    // kind:1 — appears in bitsavers feed AND filterable by tag
-    // Same pattern as cohort join/leave: single tag, single subscription catches everything
     const event = finalizeEvent({
       kind: 1,
       created_at: Math.floor(Date.now() / 1000),
-      tags: [
-        ['t', 'bitsavers'],
-        ['t', ASSESSMENT_TAG],
-        ['subject', assessment.title],
-      ],
+      tags: [['t', 'bitsavers'], ['t', ASSESSMENT_TAG], ['subject', assessment.title]],
       content: 'ASSESSMENT_CREATE:' + JSON.stringify(assessment),
     }, skBytes)
     await Promise.any(pool.publish(RELAYS, event))
@@ -67,25 +62,16 @@ const publishAssessmentToNostr = async (assessment) => {
 // ─── Question builder ─────────────────────────────────────────────────────────
 function QuestionBuilder({ questions, onChange }) {
   const addQuestion = (type) => {
-    const q = {
-      id: Date.now().toString(),
-      type,
-      text: '',
-      options: type === 'mcq' ? ['', '', '', ''] : [],
-      correctAnswer: '',
-    }
+    const q = { id: Date.now().toString(), type, text: '', options: type === 'mcq' ? ['', '', '', ''] : [], correctAnswer: '' }
     onChange([...questions, q])
   }
 
-  const updateQ = (id, field, value) => {
-    onChange(questions.map(q => q.id === id ? { ...q, [field]: value } : q))
-  }
+  const updateQ = (id, field, value) => onChange(questions.map(q => q.id === id ? { ...q, [field]: value } : q))
 
   const updateOption = (qId, idx, value) => {
     onChange(questions.map(q => {
       if (q.id !== qId) return q
-      const opts = [...q.options]
-      opts[idx] = value
+      const opts = [...q.options]; opts[idx] = value
       return { ...q, options: opts }
     }))
   }
@@ -108,17 +94,12 @@ function QuestionBuilder({ questions, onChange }) {
             </button>
           </div>
 
-          {/* Question text */}
-          <textarea
-            value={q.text} onChange={e => updateQ(q.id, 'text', e.target.value)}
-            placeholder="Type your question here…" rows={2}
-            style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none', resize: 'none', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box' }}
-          />
+          <textarea value={q.text} onChange={e => updateQ(q.id, 'text', e.target.value)} placeholder="Type your question here…" rows={2}
+            style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', color: C.text, fontSize: 13, outline: 'none', resize: 'none', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box' }} />
 
-          {/* MCQ options */}
           {q.type === 'mcq' && (
             <div>
-              <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>Options — tap radio to mark correct answer:</div>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>Options — tap letter to mark correct answer:</div>
               {q.options.map((opt, idx) => {
                 const letters = ['A', 'B', 'C', 'D']
                 const isCorrect = q.correctAnswer === opt && opt.trim()
@@ -131,14 +112,9 @@ function QuestionBuilder({ questions, onChange }) {
                       color: isCorrect ? '#fff' : C.muted,
                       cursor: 'pointer', fontWeight: 800, fontSize: 12,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {letters[idx]}
-                    </button>
-                    <input
-                      value={opt} onChange={e => updateOption(q.id, idx, e.target.value)}
-                      placeholder={`Option ${letters[idx]}`}
-                      style={{ flex: 1, background: 'transparent', border: `1px solid ${isCorrect ? 'rgba(34,197,94,0.4)' : C.border}`, borderRadius: 7, padding: '8px 10px', color: C.text, fontSize: 13, outline: 'none' }}
-                    />
+                    }}>{letters[idx]}</button>
+                    <input value={opt} onChange={e => updateOption(q.id, idx, e.target.value)} placeholder={`Option ${letters[idx]}`}
+                      style={{ flex: 1, background: 'transparent', border: `1px solid ${isCorrect ? 'rgba(34,197,94,0.4)' : C.border}`, borderRadius: 7, padding: '8px 10px', color: C.text, fontSize: 13, outline: 'none' }} />
                   </div>
                 )
               })}
@@ -146,16 +122,14 @@ function QuestionBuilder({ questions, onChange }) {
             </div>
           )}
 
-          {/* Open ended hint */}
           {q.type === 'open' && (
             <div style={{ fontSize: 11, color: C.muted, background: C.dim, borderRadius: 7, padding: '8px 12px' }}>
-              Students will type their answer. You can review submissions in Results.
+              Students will type their answer. Review submissions in the Submissions tab.
             </div>
           )}
         </div>
       ))}
 
-      {/* Add question buttons */}
       <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={() => addQuestion('mcq')} style={{ flex: 1, background: C.dim, border: `1px solid ${C.border}`, color: C.accent, padding: '10px', borderRadius: 9, fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           <Plus size={14} /> Multiple Choice
@@ -170,7 +144,8 @@ function QuestionBuilder({ questions, onChange }) {
 
 // ─── Main Admin Assignments ───────────────────────────────────────────────────
 export default function AdminAssignments() {
-  const cohorts = getCohorts()
+  // FIX: getCohorts now returns array from object storage correctly
+  const [cohorts] = useState(() => getCohorts())
   const [assessments, setAssessmentsState] = useState(getAssessments)
   const [expanded, setExpanded] = useState(null)
   const [creating, setCreating] = useState(false)
@@ -213,18 +188,16 @@ export default function AdminAssignments() {
     setAssessmentsState(updated)
     if (expanded === id) setExpanded(null)
     const deleted = (() => { try { return JSON.parse(localStorage.getItem('bitsavers_deleted_assessments') || '[]') } catch { return [] } })()
-    if (!deleted.includes(id)) {
-      localStorage.setItem('bitsavers_deleted_assessments', JSON.stringify([...deleted, id]))
-    }
+    if (!deleted.includes(id)) localStorage.setItem('bitsavers_deleted_assessments', JSON.stringify([...deleted, id]))
     await publishAssessmentDelete(id, found?.title || '')
-    setMsg('ok: Deleted everywhere via Nostr')
+    setMsg('ok: Deleted')
     setTimeout(() => setMsg(''), 3000)
   }
 
   return (
     <div>
       {msg && (
-        <div style={{ padding: '10px 14px', display:'flex', alignItems:'center', gap:8, background: msg.startsWith('ok') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${msg.startsWith('ok') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 9, color: msg.startsWith('ok') ? C.green : C.red, fontSize: 13, marginBottom: 14 }}>
+        <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, background: msg.startsWith('ok') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${msg.startsWith('ok') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 9, color: msg.startsWith('ok') ? C.green : C.red, fontSize: 13, marginBottom: 14 }}>
           {msg.replace(/^(ok|err): /, '')}
         </div>
       )}
@@ -243,11 +216,20 @@ export default function AdminAssignments() {
           <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="Description / instructions (optional)" rows={2}
             style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 14px', color: C.text, fontSize: 14, outline: 'none', resize: 'none', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box' }} />
 
+          {/* FIX: cohorts now correctly populated from object storage */}
           <select value={form.cohortId} onChange={e => set('cohortId', e.target.value)}
             style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 14px', color: form.cohortId ? C.text : C.muted, fontSize: 14, outline: 'none', marginBottom: 10, boxSizing: 'border-box' }}>
             <option value="">Assign to cohort…</option>
-            {cohorts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+            {cohorts.filter(c => c && c.id && c.name).map(c => (
+              <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+            ))}
           </select>
+
+          {cohorts.length === 0 && (
+            <div style={{ fontSize: 12, color: C.red, marginBottom: 10 }}>
+              No cohorts found. Create a cohort first in the Cohorts tab.
+            </div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, background: '#0a0a0a', border: `1px solid ${C.border}`, borderRadius: 9, padding: '10px 14px' }}>
             <Clock size={16} color={C.accent} />
@@ -270,7 +252,6 @@ export default function AdminAssignments() {
         </div>
       )}
 
-      {/* Assessments list */}
       {assessments.length === 0 && !creating && (
         <div style={{ textAlign: 'center', padding: '40px 0', color: C.muted, fontSize: 14 }}>No assessments yet. Create one above.</div>
       )}
@@ -286,7 +267,7 @@ export default function AdminAssignments() {
                 <div style={{ fontSize: 14, fontWeight: 800, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                   {cohort && <span style={{ fontSize: 11, color: C.accent, fontFamily: 'monospace' }}>{cohort.code}</span>}
-                  <span style={{ fontSize: 11, color: C.muted }}>{(a.questions||[]).length} questions</span>
+                  <span style={{ fontSize: 11, color: C.muted }}>{(a.questions || []).length} questions</span>
                   {a.timer && <span style={{ fontSize: 11, color: C.red, display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={10} /> {a.timer}min</span>}
                   <span style={{ fontSize: 11, color: C.green }}>{results.length} submitted</span>
                 </div>
@@ -298,7 +279,7 @@ export default function AdminAssignments() {
               <div style={{ borderTop: `1px solid ${C.border}`, padding: 18 }}>
                 {a.description && <div style={{ fontSize: 13, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>{a.description}</div>}
                 <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
-                  {(a.questions||[]).length} questions · {a.timer ? a.timer + ' min timer' : 'No timer'} · View submissions in the Submissions tab
+                  {(a.questions || []).length} questions · {a.timer ? a.timer + ' min timer' : 'No timer'} · View submissions in the Submissions tab
                 </div>
                 <button onClick={() => deleteAssessment(a.id)} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: C.red, padding: '8px 16px', borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
                   Delete Assessment
