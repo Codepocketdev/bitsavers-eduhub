@@ -22,8 +22,8 @@ const C = {
   muted: '#666', green: '#22c55e', red: '#ef4444',
 }
 
-const BLINK_ADDRESS = 'hodlcurator@blink.sv'
-const BLINK_LN_URL = 'https://pay.blink.sv/hodlcurator'
+const BLINK_ADDRESS = 'biteduhub@blink.sv'
+const BLINK_LN_URL = 'https://pay.blink.sv/biteduhub'
 const presets = [100, 1000, 5000, 21000, 100000]
 
 // ─── Invoice Modal with payment detection ─────────────────────────────────────
