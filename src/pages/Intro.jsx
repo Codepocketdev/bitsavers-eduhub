@@ -33,6 +33,20 @@ export default function Intro({ onNavigate }) {
 
       <div style={{ maxWidth: 800, textAlign: 'center', position: 'relative', zIndex: 1 }}>
 
+      {/* Back to main site */}
+        <div style={{ marginBottom: 32 }}>
+          <a
+            href="https://biteduhub.com"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 13, color: 'rgba(247,147,26,0.7)', textDecoration: 'none',
+              border: '1px solid rgba(247,147,26,0.2)', padding: '8px 16px', borderRadius: 99,
+            }}
+          >
+            ← Back to main site
+          </a>
+        </div>
+
         {/* Logo */}
         <div style={{ marginBottom: 40 }}>
           <div style={{
