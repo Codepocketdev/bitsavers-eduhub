@@ -95,7 +95,13 @@ export default function Navbar() {
               {/* Theme toggle */}
               <button
                 onClick={toggleTheme}
-                className={`ml-2 p-2 rounded-full transition-all ${scrolled ? 'hover:bg-gray-100 dark:hover:bg-dark-800 text-dark-700 dark:text-dark-300' : 'hover:bg-white/10 text-white'}`}
+                className={`ml-2 p-2 rounded-full transition-all ${
+                  scrolled
+                    ? 'hover:bg-gray-100 dark:hover:bg-dark-800 text-dark-700 dark:text-dark-300'
+                    : theme === 'dark'
+                      ? 'hover:bg-white/10 text-white'
+                      : 'hover:bg-black/5 text-dark-900'
+                }`}
                 aria-label="Toggle theme"
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -106,7 +112,11 @@ export default function Navbar() {
             <div className="flex lg:hidden items-center gap-2">
               <button
                 onClick={toggleTheme}
-                className={`p-2 rounded-full ${scrolled ? 'text-dark-700 dark:text-white' : 'text-white'}`}
+                className={`p-2 rounded-full ${
+                  scrolled
+                    ? 'text-dark-700 dark:text-white'
+                    : theme === 'dark' ? 'text-white' : 'text-dark-900'
+                }`}
                 aria-label="Toggle theme"
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}

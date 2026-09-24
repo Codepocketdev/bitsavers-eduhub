@@ -32,7 +32,7 @@ export default function Contact() {
   )
 
   const handleCopyEmail = async () => {
-    const ok = await copy('hello@bitsaverseduhub.com')
+    const ok = await copy('info@biteduhub.com')
     if (ok) showToast('Email copied to clipboard!', 'success')
   }
 
@@ -110,7 +110,7 @@ export default function Contact() {
                   <div>
                     <p className="text-sm text-gray-500 dark:text-dark-400">Email</p>
                     <p className="font-medium text-dark-900 dark:text-white">
-                      hello@bitsaverseduhub.com {copied && <span className="text-green-500 text-xs ml-2">Copied!</span>}
+                      info@biteduhub.com {copied && <span className="text-green-500 text-xs ml-2">Copied!</span>}
                     </p>
                   </div>
                 </button>

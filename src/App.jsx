@@ -12,6 +12,7 @@ const Programs = lazy(() => import('./pages/Programs'))
 const Team = lazy(() => import('./pages/Team'))
 const FAQ = lazy(() => import('./pages/FAQ'))
 const Contact = lazy(() => import('./pages/Contact'))
+const Sponsors = lazy(() => import('./pages/Sponsors'))
 const Donate  = lazy(() => import('./pages/Donate'))
 
 function PageWrapper({ children }) {
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="/programs" element={<PageWrapper><Programs /></PageWrapper>} />
             <Route path="/team" element={<PageWrapper><Team /></PageWrapper>} />
             <Route path="/faq" element={<PageWrapper><FAQ /></PageWrapper>} />
+            <Route path="/sponsors" element={<PageWrapper><Sponsors /></PageWrapper>} />
             <Route path="/donate" element={<PageWrapper><Donate /></PageWrapper>} />
             <Route path="/contact" element={<PageWrapper><Contact /></PageWrapper>} />
           </Routes>

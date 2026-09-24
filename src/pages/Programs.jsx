@@ -18,14 +18,6 @@ const allPrograms = [
     image: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&h=500&fit=crop',
     features: ['Lightning Setup', 'POS Integration', 'Ongoing Support'],
   },
-  {
-    id: 'developer-training',
-    icon: Code,
-    title: 'Developer Training',
-    description: 'Training the next generation of African Bitcoin developers through intensive bootcamps, hackathons, and open-source contributions.',
-    image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&h=500&fit=crop',
-    features: ['Rust & Python', 'Lightning Dev', 'Open Source'],
-  },
 ]
 
 export default function Programs() {

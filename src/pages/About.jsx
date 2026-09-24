@@ -4,7 +4,6 @@ import { CheckCircle, Target, BookOpen, Users } from 'lucide-react'
 const features = [
   { icon: BookOpen, title: 'Bitcoin Literacy Programs', desc: 'Comprehensive courses from basics to advanced.' },
   { icon: Users, title: 'Merchant Onboarding', desc: 'Helping businesses accept Bitcoin payments.' },
-  { icon: Target, title: 'Developer Training', desc: 'Building the next generation of Bitcoin developers.' },
 ]
 
 export default function About() {
@@ -48,7 +47,7 @@ export default function About() {
               viewport={{ once: true }}
             >
               <h2 className="text-3xl md:text-4xl font-extrabold text-dark-900 dark:text-white mb-6">
-                Zambia's Bitcoin Circular Economy
+                Who We Are
               </h2>
               <p className="text-gray-600 dark:text-dark-400 leading-relaxed mb-6">
                 Bitsavers EduHub is dedicated to educating individuals, students, and entrepreneurs on Bitcoin 

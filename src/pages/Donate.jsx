@@ -6,7 +6,6 @@ const LIGHTNING_ADDRESS = 'biteduhub@blink.sv'
 const BLINK_LN_URL      = 'https://pay.blink.sv/biteduhub'
 const PRESETS           = [100, 1000, 5000, 21000, 100000]
 
-// ── Invoice Modal ─────────────────────────────────────
 function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
   const [copied, setCopied] = useState(false)
   const [paid,   setPaid]   = useState(false)
@@ -37,7 +36,7 @@ function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
 
   return (
     <div
-      className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[2000] flex items-start sm:items-center justify-center p-4 py-10 overflow-y-auto bg-black/70 backdrop-blur-sm"
       onClick={e => e.target === e.currentTarget && !paid && onClose()}
     >
       <motion.div
@@ -45,9 +44,8 @@ function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.92, opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="bg-white dark:bg-dark-900 border border-gray-200 dark:border-dark-700 rounded-2xl w-full max-w-sm p-6 relative"
+        className="bg-white dark:bg-dark-900 border border-gray-200 dark:border-dark-700 rounded-2xl w-full max-w-sm p-6 relative my-auto max-h-[calc(100vh-5rem)] overflow-y-auto"
       >
-        {/* Close */}
         {!paid && (
           <button
             onClick={onClose}
@@ -58,7 +56,6 @@ function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
         )}
 
         {paid ? (
-          /* Success screen */
           <div className="text-center py-6">
             <motion.div
               initial={{ scale: 0 }}
@@ -73,7 +70,6 @@ function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
           </div>
         ) : (
           <>
-            {/* Header */}
             <div className="text-center mb-5">
               <div className="w-12 h-12 rounded-full bg-orange-500 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-orange-500/30">
                 <Zap className="w-6 h-6 text-white fill-white" />
@@ -82,7 +78,6 @@ function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
               <div className="text-sm text-gray-500 dark:text-dark-400">Scan with any Lightning wallet</div>
             </div>
 
-            {/* QR */}
             <div className="bg-white rounded-xl p-3 mb-4 flex justify-center border border-gray-100">
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(invoice)}&bgcolor=ffffff&color=1a1410&margin=8`}
@@ -91,7 +86,6 @@ function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
               />
             </div>
 
-            {/* Waiting indicator */}
             {verifyUrl && (
               <div className="flex items-center justify-center gap-2 mb-4 px-3 py-2 bg-orange-500/5 border border-orange-500/20 rounded-lg">
                 <Loader className="w-3 h-3 text-orange-500 animate-spin" />
@@ -99,12 +93,10 @@ function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
               </div>
             )}
 
-            {/* Invoice string */}
             <div className="bg-gray-50 dark:bg-dark-950 border border-gray-200 dark:border-dark-700 rounded-lg p-3 font-mono text-xs text-gray-400 break-all leading-relaxed mb-4">
               {invoice.slice(0, 80)}…
             </div>
 
-            {/* Buttons */}
             <div className="flex gap-3 mb-4">
               <button
                 onClick={copy}
@@ -141,7 +133,6 @@ function InvoiceModal({ invoice, verifyUrl, amount, onClose, onPaid }) {
   )
 }
 
-// ── Main Donate Page ──────────────────────────────────
 export default function Donate() {
   const [amount,    setAmount]    = useState(1000)
   const [loading,   setLoading]   = useState(false)
@@ -179,7 +170,6 @@ export default function Donate() {
     <div className="min-h-screen bg-white dark:bg-dark-950 pt-24 pb-16">
       <div className="max-w-lg mx-auto px-4 sm:px-6">
 
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -198,7 +188,6 @@ export default function Donate() {
           </p>
         </motion.div>
 
-        {/* Donate card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -222,37 +211,18 @@ export default function Donate() {
             ))}
           </div>
 
-          {/* Amount display */}
-          <div className="text-center mb-4">
-            <span className="text-5xl font-extrabold text-dark-900 dark:text-white">{amount.toLocaleString()}</span>
-            <span className="text-lg font-semibold text-gray-400 dark:text-dark-400 ml-2">sats</span>
-          </div>
-
-          {/* Slider */}
-          <div className="mb-6">
-            <input
-              type="range"
-              min={1}
-              max={1000000}
-              value={amount}
-              onChange={e => setAmount(Number(e.target.value))}
-              className="w-full accent-orange-500 cursor-pointer"
-            />
-            <div className="flex justify-between text-xs text-gray-400 dark:text-dark-500 mt-1">
-              <span>1 sat</span>
-              <span>1,000,000 sats</span>
-            </div>
-          </div>
-
-          {/* Custom input */}
+          {/* Amount input — doubles as the display */}
           <div className="relative mb-6">
             <input
               type="number"
+              min={1}
               value={amount}
               onChange={e => setAmount(Math.max(1, Number(e.target.value)))}
-              className="w-full bg-white dark:bg-dark-800 border-2 border-gray-200 dark:border-dark-600 focus:border-orange-500 rounded-xl px-5 py-4 text-center text-xl font-bold text-dark-900 dark:text-white outline-none transition-all pr-16"
+              className="w-full bg-white dark:bg-dark-800 border-2 border-gray-200 dark:border-dark-600 focus:border-orange-500 rounded-xl px-5 py-5 text-center text-4xl font-extrabold text-dark-900 dark:text-white outline-none transition-all"
             />
-            <span className="absolute right-5 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400 dark:text-dark-500">SATS</span>
+            <span className="absolute right-5 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-400 dark:text-dark-500">
+              SATS
+            </span>
           </div>
 
           {/* Lightning address */}
@@ -261,14 +231,12 @@ export default function Donate() {
             <span className="font-mono text-sm text-gray-600 dark:text-dark-300">{LIGHTNING_ADDRESS}</span>
           </div>
 
-          {/* Error */}
           {error && (
             <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
               {error}
             </div>
           )}
 
-          {/* Pay button */}
           <button
             onClick={fetchInvoice}
             disabled={loading || amount < 1}
@@ -283,7 +251,6 @@ export default function Donate() {
 
       </div>
 
-      {/* Invoice Modal */}
       <AnimatePresence>
         {showModal && invoice && (
           <InvoiceModal
@@ -298,4 +265,3 @@ export default function Donate() {
     </div>
   )
 }
-

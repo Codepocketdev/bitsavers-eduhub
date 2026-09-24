@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Calendar, MapPin, Users, X, ArrowRight } from 'lucide-react'
 import { recentEvents } from '../data/content'
+import EventVideoFrame from './EventVideoFrame'
 
 export default function RecentEvents() {
   const [selected, setSelected] = useState(null)
@@ -36,30 +37,36 @@ export default function RecentEvents() {
               onClick={() => setSelected(event)}
               className="group bg-white dark:bg-dark-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-dark-800 shadow-md hover:shadow-2xl transition-all cursor-pointer"
             >
-              <div className="h-56 overflow-hidden relative">
-                <img
-                  src={event.image}
-                  alt={event.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  loading="lazy"
-                />
-                <div className="absolute top-4 left-4 flex gap-2">
-                  {event.tags.map((tag) => (
-                    <span key={tag} className="px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full">
-                      {tag}
-                    </span>
-                  ))}
+              {event.video ? (
+                <EventVideoFrame src={event.video} tags={event.tags} />
+              ) : (
+                <div className="h-56 overflow-hidden relative">
+                  <img
+                    src={event.image}
+                    alt={event.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-4 left-4 flex gap-2">
+                    {event.tags.map((tag) => (
+                      <span key={tag} className="px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="p-6">
                 <h3 className="text-lg font-bold text-dark-900 dark:text-white mb-2 group-hover:text-orange-500 transition-colors">
                   {event.title}
                 </h3>
                 <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-dark-400 mb-3">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4 text-orange-500" />
-                    {event.date}
-                  </span>
+                  {event.date && (
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-4 h-4 text-orange-500" />
+                      {event.date}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1">
                     <Users className="w-4 h-4 text-orange-500" />
                     {event.attendees}
@@ -92,8 +99,20 @@ export default function RecentEvents() {
               onClick={(e) => e.stopPropagation()}
               className="bg-white dark:bg-dark-900 rounded-2xl overflow-hidden max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
             >
-              <div className="relative h-64">
-                <img src={selected.image} alt={selected.title} className="w-full h-full object-cover" />
+              <div className="relative h-64 bg-black">
+                {selected.video ? (
+                  <video
+                    src={selected.video}
+                    autoPlay
+                    muted
+                    loop
+                    controls
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <img src={selected.image} alt={selected.title} className="w-full h-full object-cover" />
+                )}
                 <button
                   onClick={() => setSelected(null)}
                   className="absolute top-4 right-4 w-10 h-10 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
@@ -111,10 +130,12 @@ export default function RecentEvents() {
                 </div>
                 <h3 className="text-2xl font-bold text-dark-900 dark:text-white mb-4">{selected.title}</h3>
                 <div className="flex flex-wrap gap-6 text-sm text-gray-500 dark:text-dark-400 mb-6">
-                  <span className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-orange-500" />
-                    {selected.date}
-                  </span>
+                  {selected.date && (
+                    <span className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-orange-500" />
+                      {selected.date}
+                    </span>
+                  )}
                   <span className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-orange-500" />
                     {selected.location}

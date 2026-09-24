@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Twitter, Send, Youtube, Github, Mail, MapPin, Heart, Bitcoin } from 'lucide-react'
+import { Twitter, Send, Youtube, Github, Instagram, Facebook, Linkedin, Mail, MapPin } from 'lucide-react'
+import { TikTokIcon, NostrIcon } from './BrandIcons'
 
 const footerLinks = [
   { title: 'Quick Links', links: [
@@ -12,16 +13,20 @@ const footerLinks = [
   { title: 'Programs', links: [
     { label: 'Bitcoin Basics', path: '/programs' },
     { label: 'Lightning Network', path: '/programs' },
-    { label: 'Developer Bootcamp', path: '/programs' },
     { label: 'Merchant Onboarding', path: '/programs' },
   ]},
 ]
 
 const socials = [
-  { icon: Twitter, href: '#', label: 'Twitter' },
-  { icon: Send, href: '#', label: 'Telegram' },
-  { icon: Youtube, href: '#', label: 'YouTube' },
-  { icon: Github, href: '#', label: 'GitHub' },
+  { icon: Twitter,     href: 'https://x.com/BitEduhub', label: 'Twitter' },
+  { icon: Send,        href: '#', label: 'Telegram' },
+  { icon: Youtube,     href: '#', label: 'YouTube' },
+  { icon: Github,      href: 'https://github.com/Codepocketdev/bitsavers-eduhub', label: 'GitHub' },
+  { icon: Instagram,   href: 'https://www.instagram.com/biteduhub', label: 'Instagram' },
+  { icon: Facebook,    href: 'https://www.facebook.com/profile.php?id=61578651988175', label: 'Facebook' },
+  { icon: TikTokIcon,  href: 'https://www.tiktok.com/@biteduhub', label: 'TikTok' },
+  { icon: Linkedin,    href: 'https://www.linkedin.com/company/bitsavers-eduhub/', label: 'LinkedIn' },
+  { icon: NostrIcon,   href: 'https://yakihonne.com/profile/nprofile1qqsf49usnyrpjufc6dyf2jwe632wtsfms0cr5rcvk9rhjaj5jnunfaqzqqpsgqqqqqqqlpuxlp', label: 'Nostr' },
 ]
 
 export default function Footer() {
@@ -42,11 +47,13 @@ export default function Footer() {
             <p className="text-dark-400 text-sm leading-relaxed mb-6">
               Empowering Africa through Bitcoin education, adoption, and innovation.
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               {socials.map((social) => (
                 <a
                   key={social.label}
                   href={social.href}
+                  target={social.href !== '#' ? '_blank' : undefined}
+                  rel={social.href !== '#' ? 'noopener noreferrer' : undefined}
                   aria-label={social.label}
                   className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-orange-500 transition-all hover:-translate-y-1"
                 >
@@ -87,7 +94,7 @@ export default function Footer() {
             <div className="space-y-3">
               <p className="flex items-center gap-3 text-dark-400 text-sm">
                 <Mail className="w-4 h-4 text-orange-500" />
-                hello@bitsaverseduhub.com
+                info@biteduhub.com
               </p>
               <p className="flex items-center gap-3 text-dark-400 text-sm">
                 <MapPin className="w-4 h-4 text-orange-500" />
@@ -99,9 +106,6 @@ export default function Footer() {
 
         <div className="border-t border-white/10 mt-12 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-dark-500 text-sm">&copy; {new Date().getFullYear()} Bitsavers EduHub. All rights reserved.</p>
-          <p className="text-dark-500 text-sm flex items-center gap-1">
-            Made with <Heart className="w-3 h-3 text-orange-500 fill-orange-500" /> and <Bitcoin className="w-3 h-3 text-orange-500" />
-          </p>
         </div>
       </div>
     </footer>

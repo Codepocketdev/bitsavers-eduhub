@@ -37,13 +37,6 @@ export const programs = [
     image: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=600&h=400&fit=crop',
     link: '/programs#merchant-adoption',
   },
-  {
-    id: 'developer-training',
-    title: 'Developer Training',
-    description: 'Training the next generation of African Bitcoin developers through intensive bootcamps, hackathons, and open-source contributions.',
-    image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=600&h=400&fit=crop',
-    link: '/programs#developer-training',
-  },
 ]
 
 export const team = [
@@ -96,6 +89,7 @@ export const navLinks = [
   { path: '/programs', label: 'Programs' },
   { path: '/team', label: 'Team' },
   { path: '/faq', label: 'FAQ' },
+  { path: '/sponsors', label: 'Sponsors' },
   { path: '/donate', label: 'Donate' },
   { path: '/contact', label: 'Join Us' },
 ]
@@ -115,10 +109,11 @@ export const recentEvents = [
   },
   {
     id: 'campus-caravan-2026',
-    title: 'Campus Caravan — University of Nairobi',
-    date: 'June 15, 2026',
-    location: 'University of Nairobi',
-    description: 'Our Campus Caravan tour kicked off at UoN with a packed auditorium of curious students. We covered Bitcoin basics, wallet setup, and career paths in the Bitcoin ecosystem.',
+    title: 'Campus Caravan',
+    video: 'https://files.catbox.moe/87zuyk.mp4',
+    date: '',
+    location: 'Universities across Kenya',
+    description: 'Our Campus Caravan tour has brought Bitcoin basics, wallet setup, and career conversations to packed auditoriums at universities across Kenya — sparking curiosity and equipping students with practical, real-world skills.',
     image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=500&fit=crop',
     attendees: 350,
     tags: ['Education', 'Campus'],
@@ -157,17 +152,6 @@ export const upcomingEvents = [
     image: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800&h=500&fit=crop',
     spots: 80,
     tags: ['Women', 'Workshop'],
-  },
-  {
-    id: 'bitcoin-dev-bootcamp',
-    title: 'Bitcoin Developer Bootcamp',
-    date: 'October 5-10, 2026',
-    time: '9:00 AM - 5:00 PM Daily',
-    location: 'Nairobi, Kenya',
-    description: 'A 6-day intensive bootcamp for aspiring Bitcoin developers. Learn Rust, Bitcoin Core, Lightning development, and build your first open-source contribution.',
-    image: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&h=500&fit=crop',
-    spots: 40,
-    tags: ['Developer', 'Bootcamp'],
   },
   {
     id: 'merchant-onboarding-drive',
