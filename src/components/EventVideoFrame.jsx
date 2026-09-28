@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
 import { Volume2, VolumeX } from 'lucide-react'
 
-export default function EventVideoFrame({ src, tags }) {
+export default function EventVideoFrame({ src, tags = [], heightClass = 'h-56' }) {
   const videoRef = useRef(null)
   const [muted, setMuted] = useState(true)
   const [showMuteBtn, setShowMuteBtn] = useState(false)
@@ -36,7 +36,7 @@ export default function EventVideoFrame({ src, tags }) {
   }
 
   return (
-    <div className="h-56 overflow-hidden relative" onClick={handleFrameClick}>
+    <div className={`${heightClass} overflow-hidden relative`} onClick={handleFrameClick}>
       <video
         ref={videoRef}
         src={src}
@@ -47,13 +47,15 @@ export default function EventVideoFrame({ src, tags }) {
         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
       />
 
-      <div className="absolute top-4 left-4 flex gap-2">
-        {tags.map((tag) => (
-          <span key={tag} className="px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full">
-            {tag}
-          </span>
-        ))}
-      </div>
+      {tags.length > 0 && (
+        <div className="absolute top-4 left-4 flex gap-2">
+          {tags.map((tag) => (
+            <span key={tag} className="px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
 
       {showMuteBtn && (
         <button

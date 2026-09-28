@@ -1,3 +1,4 @@
+import { GraduationCap, Store } from 'lucide-react'
 export const stats = [
   { value: 500, suffix: '+', label: 'Students Trained' },
   { value: 50, suffix: '+', label: 'Workshops Held' },
@@ -25,17 +26,22 @@ export const pillars = [
 export const programs = [
   {
     id: 'bitcoin-education',
+    icon: GraduationCap,
     title: 'Bitcoin Education',
     description: 'We teach students, entrepreneurs, and local communities about Bitcoin — how it works, and how it creates opportunities for financial independence and global inclusion.',
     image: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&h=400&fit=crop',
     link: '/programs#bitcoin-education',
+    features: ['Beginner to Advanced', 'Hands-on Workshops', 'Certification'],
   },
   {
     id: 'merchant-adoption',
+    icon: Store,
     title: 'Merchant Adoption',
     description: 'We support small businesses and vendors to start accepting Bitcoin through Lightning wallets, enabling fast, low-fee payments and financial inclusion.',
     image: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=600&h=400&fit=crop',
+    video: 'https://files.catbox.moe/9wf2th.mp4',
     link: '/programs#merchant-adoption',
+    features: ['Lightning Setup', 'POS Integration', 'Ongoing Support'],
   },
 ]
 
@@ -103,7 +109,7 @@ export const recentEvents = [
     date: 'May 22, 2026',
     location: 'Nairobi, Kenya',
     description: 'Celebrated the 16th anniversary of the first Bitcoin transaction with pizza, games, and a live Lightning workshop. Over 200 attendees joined us for an evening of fun and learning.',
-    image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&h=500&fit=crop',
+    image: 'https://files.catbox.moe/88kk2o.jpg',
     attendees: 200,
     tags: ['Community', 'Workshop'],
   },
@@ -124,7 +130,7 @@ export const recentEvents = [
     date: 'July 8, 2026',
     location: 'Nairobi, Kenya',
     description: 'An empowering session focused on women in Bitcoin. We hosted panel discussions, mentorship circles, and hands-on wallet training for 150+ women from diverse backgrounds.',
-    image: 'https://images.unsplash.com/photo-1573164713714-d95e436ab8d6?w=800&h=500&fit=crop',
+    image: 'https://files.catbox.moe/3bfq9g.jpg',
     attendees: 150,
     tags: ['Women', 'Empowerment'],
   },
@@ -172,7 +178,7 @@ export const galleryEvents = [
     title: 'Bitcoin Pizza Day',
     category: 'Bitcoin Pizza Day',
     images: [
-      'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&h=400&fit=crop',
+      'https://files.catbox.moe/88kk2o.jpg',
       'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&h=400&fit=crop',
       'https://images.unsplash.com/photo-1574126154517-d1e0d89e7344?w=600&h=400&fit=crop',
       'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&h=400&fit=crop',
@@ -194,7 +200,7 @@ export const galleryEvents = [
     title: 'She Leads',
     category: 'She Leads',
     images: [
-      'https://images.unsplash.com/photo-1573164713714-d95e436ab8d6?w=600&h=400&fit=crop',
+      'https://files.catbox.moe/3bfq9g.jpg',
       'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=600&h=400&fit=crop',
       'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&h=400&fit=crop',
       'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=600&h=400&fit=crop',
