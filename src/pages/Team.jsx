@@ -2,6 +2,15 @@ import { motion } from 'framer-motion'
 import { Twitter, Linkedin } from 'lucide-react'
 import { team } from '../data/content'
 
+function getInitials(name) {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
 export default function Team() {
   return (
     <div className="pt-24">
@@ -19,26 +28,32 @@ export default function Team() {
             animate={{ opacity: 1, y: 0 }}
             className="text-4xl md:text-6xl font-extrabold text-white mb-6"
           >
-            Meet The Founders
+            Meet The Team
           </motion.h1>
         </div>
       </section>
 
       <section className="py-24 bg-gray-50 dark:bg-dark-950">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
             {team.map((member, i) => (
               <motion.div
                 key={member.name}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.15 }}
+                transition={{ delay: i * 0.1 }}
                 whileHover={{ y: -6 }}
                 className="bg-white dark:bg-dark-900 rounded-2xl overflow-hidden shadow-lg border border-gray-100 dark:border-dark-800"
               >
                 <div className="h-72 overflow-hidden">
-                  <img src={member.image} alt={member.name} className="w-full h-full object-cover" loading="lazy" />
+                  {member.image ? (
+                    <img src={member.image} alt={member.name} className="w-full h-full object-cover" loading="lazy" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-orange-500 to-orange-600">
+                      <span className="text-4xl font-extrabold text-white">{getInitials(member.name)}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="p-6">
                   <h3 className="text-xl font-bold text-dark-900 dark:text-white">{member.name}</h3>

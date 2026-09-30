@@ -47,17 +47,45 @@ export const programs = [
 
 export const team = [
   {
-    name: 'Alex Mwangi',
-    role: 'Co-Founding Partner',
-    bio: 'Alex is committed to driving Bitcoin awareness and fostering economic inclusion. With a strong belief in financial freedom, he works tirelessly to support communities in embracing Bitcoin.',
-    image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face',
+    name: 'Linda Wambui',
+    role: 'Founder',
+    bio: 'Linda founded Bitsavers EduHub with a vision to make Bitcoin education accessible across Africa. She leads the organization\'s strategy and community partnerships, driving its mission of financial inclusion through open, permissionless technology.',
+    image: 'https://files.catbox.moe/4eu1t5.jpg',
     social: { twitter: '#', linkedin: '#' },
   },
   {
-    name: 'Sarah Ochieng',
-    role: 'Co-Founding Partner',
-    bio: 'Sarah leads curriculum development and community outreach. Her passion for education and technology drives Bitsavers EduHub\'s mission to make Bitcoin accessible to everyone.',
-    image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop&crop=face',
+    name: 'Doris Olele',
+    role: 'Academic Head',
+    bio: 'Doris oversees Bitsavers EduHub\'s curriculum and academic programs, ensuring every course is practical, accurate, and accessible to learners at every level.',
+    image: '',
+    social: { twitter: '#', linkedin: '#' },
+  },
+  {
+    name: 'Stacy Kweto',
+    role: 'Program Manager',
+    bio: 'Stacy coordinates Bitsavers EduHub\'s events and community programs, keeping workshops, campus tours, and outreach initiatives running smoothly from planning to execution.',
+    image: '',
+    social: { twitter: '#', linkedin: '#' },
+  },
+  {
+    name: 'Vendate',
+    role: 'Social Media Manager',
+    bio: 'Vendate manages Bitsavers EduHub\'s online presence, sharing the organization\'s work and Bitcoin education content with communities across social media.',
+    image: '',
+    social: { twitter: '#', linkedin: '#' },
+  },
+  {
+    name: 'Brain Ndege',
+    role: 'Graphics Designer',
+    bio: 'Brain brings Bitsavers EduHub\'s visual identity to life, designing graphics, event materials, and brand assets that reflect the organization\'s mission and energy.',
+    image: '',
+    social: { twitter: '#', linkedin: '#' },
+  },
+  {
+    name: 'Martin Tubula',
+    role: 'Developer',
+    bio: 'Martin builds and maintains Bitsavers EduHub\'s digital platforms, combining a background in Bitcoin and open-source development to support the organization\'s education and outreach efforts.',
+    image: '',
     social: { twitter: '#', linkedin: '#' },
   },
 ]
