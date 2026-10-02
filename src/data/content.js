@@ -57,21 +57,21 @@ export const team = [
     name: 'Doris Olele',
     role: 'Academic Head',
     bio: 'Doris oversees Bitsavers EduHub\'s curriculum and academic programs, ensuring every course is practical, accurate, and accessible to learners at every level.',
-    image: '',
+    image: '/images/team/doris.jpg',
     social: { twitter: '#', linkedin: '#' },
   },
   {
     name: 'Stacy Kweto',
     role: 'Program Manager',
     bio: 'Stacy coordinates Bitsavers EduHub\'s events and community programs, keeping workshops, campus tours, and outreach initiatives running smoothly from planning to execution.',
-    image: '',
+    image: '/images/team/stacy.jpg',
     social: { twitter: '#', linkedin: '#' },
   },
   {
-    name: 'Vendate',
+    name: 'Venadate Kerubo',
     role: 'Social Media Manager',
-    bio: 'Vendate manages Bitsavers EduHub\'s online presence, sharing the organization\'s work and Bitcoin education content with communities across social media.',
-    image: '',
+    bio: 'Venadate manages Bitsavers EduHub\'s online presence, sharing the organization\'s work and Bitcoin education content with communities across social media.',
+    image: '/images/team/venadate.jpg',
     social: { twitter: '#', linkedin: '#' },
   },
   {
@@ -164,15 +164,19 @@ export const recentEvents = [
   },
 ]
 
+// calendar.dates = YYYY-MM-DD (Nairobi time), start/end = HH:MM (24h).
+// Leave end out if unconfirmed; the calendar file defaults to 4 hours.
 export const upcomingEvents = [
   {
     id: 'campus-caravan-kenyatta',
     title: 'Campus Caravan — Kenyatta University',
-    date: 'August 20, 2026',
-    time: '2:00 PM - 6:00 PM',
+    date: 'October 16, 17 & 24, 2026',
+    time: '10:00 AM - 2:00 PM',
+    calendar: { dates: ['2026-10-16', '2026-10-17', '2026-10-24'], start: '10:00', end: '14:00' },
     location: 'Kenyatta University Main Campus',
     description: 'The Campus Caravan continues! Join us for an interactive session on Bitcoin basics, Lightning Network demos, and a Q&A with industry experts.',
-    image: 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=800&h=500&fit=crop',
+    image: '/images/events/ku-caravan-poster.jpg',
+    registerUrl: 'https://bit.ly/4iUIuwi',
     spots: 120,
     tags: ['Education', 'Campus'],
   },
@@ -192,6 +196,7 @@ export const upcomingEvents = [
     title: 'Merchant Onboarding Drive',
     date: 'November 18, 2026',
     time: '9:00 AM - 6:00 PM',
+    calendar: { dates: ['2026-11-18'], start: '09:00', end: '18:00' },
     location: 'Nairobi CBD',
     description: 'Join our team as we walk the streets of Nairobi, onboarding local merchants to accept Bitcoin via Lightning. Training, POS setup, and support provided on-site.',
     image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&h=500&fit=crop',

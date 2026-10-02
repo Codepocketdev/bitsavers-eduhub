@@ -46,9 +46,9 @@ export default function Team() {
                 whileHover={{ y: -6 }}
                 className="bg-white dark:bg-dark-900 rounded-2xl overflow-hidden shadow-lg border border-gray-100 dark:border-dark-800"
               >
-                <div className="h-72 overflow-hidden">
+                <div className="aspect-[4/5] overflow-hidden bg-gray-100 dark:bg-dark-800">
                   {member.image ? (
-                    <img src={member.image} alt={member.name} className="w-full h-full object-cover" loading="lazy" />
+                    <img src={member.image} alt={member.name} className="w-full h-full object-cover object-top" loading="lazy" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-orange-500 to-orange-600">
                       <span className="text-4xl font-extrabold text-white">{getInitials(member.name)}</span>

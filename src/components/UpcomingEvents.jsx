@@ -4,23 +4,83 @@ import { Calendar, Clock, MapPin, Ticket, Bell, Check } from 'lucide-react'
 import { upcomingEvents } from '../data/content'
 import { useApp } from '../context/AppContext'
 
+const pad = (n) => String(n).padStart(2, '0')
+
+// Nairobi is UTC+3 with no daylight saving, so convert to UTC for the .ics file
+function toICSDate(date, time) {
+  const [y, m, d] = date.split('-').map(Number)
+  const [hh, mm] = time.split(':').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d, hh - 3, mm))
+  return `${dt.getUTCFullYear()}${pad(dt.getUTCMonth() + 1)}${pad(dt.getUTCDate())}T${pad(dt.getUTCHours())}${pad(dt.getUTCMinutes())}00Z`
+}
+
+function defaultEnd(start) {
+  const [h, m] = start.split(':').map(Number)
+  return `${pad(Math.min(h + 4, 23))}:${pad(m)}`
+}
+
+function escapeICS(text) {
+  return String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\n/g, '\\n')
+}
+
+function downloadICS(event) {
+  const { dates, start, end } = event.calendar
+  const endTime = end || defaultEnd(start)
+  const stamp = toICSDate(new Date().toISOString().slice(0, 10), '03:00')
+
+  const events = dates.map((date) => [
+    'BEGIN:VEVENT',
+    `UID:${event.id}-${date}@bitsavers-eduhub`,
+    `DTSTAMP:${stamp}`,
+    `DTSTART:${toICSDate(date, start)}`,
+    `DTEND:${toICSDate(date, endTime)}`,
+    `SUMMARY:${escapeICS(event.title)}`,
+    `LOCATION:${escapeICS(event.location)}`,
+    `DESCRIPTION:${escapeICS(event.description)}`,
+    'BEGIN:VALARM',
+    'TRIGGER:-P1D',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${escapeICS(event.title)} is tomorrow`,
+    'END:VALARM',
+    'END:VEVENT',
+  ].join('\r\n'))
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Bitsavers EduHub//Events//EN',
+    'CALSCALE:GREGORIAN',
+    ...events,
+    'END:VCALENDAR',
+  ].join('\r\n')
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${event.id}.ics`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export default function UpcomingEvents() {
   const { showToast } = useApp()
-  const [reminders, setReminders] = useState(new Set())
+  const [added, setAdded] = useState(new Set())
 
-  const toggleReminder = (id) => {
-    setReminders((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-        showToast('Reminder removed', 'info')
-      } else {
-        next.add(id)
-        showToast('Reminder set! We will notify you.', 'success')
-      }
-      return next
-    })
+  const addToCalendar = (event) => {
+    downloadICS(event)
+    setAdded((prev) => new Set(prev).add(event.id))
+    showToast('Calendar file downloaded. Open it to add the event.', 'success')
   }
+
+  const registerClass =
+    'flex-1 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-full text-center transition-all hover:-translate-y-0.5'
 
   return (
     <section className="py-24 bg-white dark:bg-dark-950">
@@ -41,84 +101,109 @@ export default function UpcomingEvents() {
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {upcomingEvents.map((event, i) => (
-            <motion.div
-              key={event.id}
-              initial={{ opacity: 0, x: i % 2 === 0 ? -30 : 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.1 }}
-              whileHover={{ y: -4 }}
-              className="group bg-gray-50 dark:bg-dark-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-dark-800 shadow-sm hover:shadow-xl transition-all"
-            >
-              <div className="flex flex-col sm:flex-row">
-                {/* Image */}
-                <div className="sm:w-48 h-48 sm:h-auto shrink-0 overflow-hidden">
-                  <img
-                    src={event.image}
-                    alt={event.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
+          {upcomingEvents.map((event, i) => {
+            const isPoster = event.image.startsWith('/images/')
+            const isAdded = added.has(event.id)
+            return (
+              <motion.div
+                key={event.id}
+                initial={{ opacity: 0, x: i % 2 === 0 ? -30 : 30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
+                whileHover={{ y: -4 }}
+                className="group bg-gray-50 dark:bg-dark-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-dark-800 shadow-sm hover:shadow-xl transition-all"
+              >
+                <div className="flex flex-col sm:flex-row">
+                  {/* Image */}
+                  <div
+                    className={
+                      isPoster
+                        ? 'w-full sm:w-56 aspect-[4/5] sm:aspect-auto shrink-0 overflow-hidden bg-dark-900'
+                        : 'sm:w-48 h-48 sm:h-auto shrink-0 overflow-hidden'
+                    }
+                  >
+                    <img
+                      src={event.image}
+                      alt={event.title}
+                      className={
+                        isPoster
+                          ? 'w-full h-full object-contain'
+                          : 'w-full h-full object-cover group-hover:scale-105 transition-transform duration-500'
+                      }
+                      loading="lazy"
+                    />
+                  </div>
+
+                  {/* Content */}
+                  <div className="p-6 flex-1 flex flex-col">
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {event.tags.map((tag) => (
+                        <span key={tag} className="px-2.5 py-0.5 bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-semibold rounded-full">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+
+                    <h3 className="text-lg font-bold text-dark-900 dark:text-white mb-2 group-hover:text-orange-500 transition-colors">
+                      {event.title}
+                    </h3>
+
+                    <p className="text-gray-500 dark:text-dark-400 text-sm mb-4 line-clamp-2 flex-1">
+                      {event.description}
+                    </p>
+
+                    <div className="space-y-2 text-sm text-gray-500 dark:text-dark-400 mb-4">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
+                        {event.date}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-orange-500 shrink-0" />
+                        {event.time}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
+                        {event.location}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Ticket className="w-4 h-4 text-orange-500 shrink-0" />
+                        {event.spots} spots available
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      {event.registerUrl ? (
+                        <a
+                          href={event.registerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={registerClass}
+                        >
+                          Register
+                        </a>
+                      ) : (
+                        <button className={registerClass}>Register</button>
+                      )}
+                      {event.calendar && (
+                        <button
+                          onClick={() => addToCalendar(event)}
+                          className={`px-4 py-2.5 rounded-full text-sm font-semibold border transition-all hover:-translate-y-0.5 flex items-center gap-2 ${
+                            isAdded
+                              ? 'bg-green-500 border-green-500 text-white'
+                              : 'border-gray-200 dark:border-dark-700 text-gray-600 dark:text-dark-300 hover:border-orange-500 hover:text-orange-500'
+                          }`}
+                        >
+                          {isAdded ? <Check className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                          {isAdded ? 'Added' : 'Remind Me'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-
-                {/* Content */}
-                <div className="p-6 flex-1 flex flex-col">
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {event.tags.map((tag) => (
-                      <span key={tag} className="px-2.5 py-0.5 bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-semibold rounded-full">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-
-                  <h3 className="text-lg font-bold text-dark-900 dark:text-white mb-2 group-hover:text-orange-500 transition-colors">
-                    {event.title}
-                  </h3>
-
-                  <p className="text-gray-500 dark:text-dark-400 text-sm mb-4 line-clamp-2 flex-1">
-                    {event.description}
-                  </p>
-
-                  <div className="space-y-2 text-sm text-gray-500 dark:text-dark-400 mb-4">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
-                      {event.date}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-orange-500 shrink-0" />
-                      {event.time}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
-                      {event.location}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Ticket className="w-4 h-4 text-orange-500 shrink-0" />
-                      {event.spots} spots available
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button className="flex-1 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-full transition-all hover:-translate-y-0.5">
-                      Register
-                    </button>
-                    <button
-                      onClick={() => toggleReminder(event.id)}
-                      className={`px-4 py-2.5 rounded-full text-sm font-semibold border transition-all hover:-translate-y-0.5 flex items-center gap-2 ${
-                        reminders.has(event.id)
-                          ? 'bg-green-500 border-green-500 text-white'
-                          : 'border-gray-200 dark:border-dark-700 text-gray-600 dark:text-dark-300 hover:border-orange-500 hover:text-orange-500'
-                      }`}
-                    >
-                      {reminders.has(event.id) ? <Check className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
-                      {reminders.has(event.id) ? 'Saved' : 'Remind Me'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            )
+          })}
         </div>
       </div>
     </section>
