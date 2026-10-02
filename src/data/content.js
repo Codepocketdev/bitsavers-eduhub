@@ -29,7 +29,7 @@ export const programs = [
     icon: GraduationCap,
     title: 'Bitcoin Education',
     description: 'We teach students, entrepreneurs, and local communities about Bitcoin — how it works, and how it creates opportunities for financial independence and global inclusion.',
-    image: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&h=400&fit=crop',
+    image: '/images/programs/bitcoin-education.jpg',
     link: '/programs#bitcoin-education',
     features: ['Beginner to Advanced', 'Hands-on Workshops', 'Certification'],
   },
