@@ -117,7 +117,7 @@ export default function UpcomingEvents() {
     'text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400 mb-2'
 
   return (
-    <section className="py-24 bg-white dark:bg-dark-950">
+    <section className="py-24 bg-white dark:bg-dark-950 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -136,41 +136,49 @@ export default function UpcomingEvents() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {upcomingEvents.map((event, i) => {
-            const isPoster = event.image.startsWith('/images/')
+            const isPoster = event.image.startsWith('/images/events/')
             const pickerOpen = openPicker === event.id
             return (
               <motion.div
                 key={event.id}
-                initial={{ opacity: 0, x: i % 2 === 0 ? -30 : 30 }}
-                whileInView={{ opacity: 1, x: 0 }}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.5, delay: i * 0.1 }}
                 whileHover={{ y: -4 }}
                 className="group bg-gray-50 dark:bg-dark-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-dark-800 shadow-sm hover:shadow-xl transition-all"
               >
                 <div className="flex flex-col sm:flex-row">
-                  {/* Image */}
-                  <div
-                    className={
-                      isPoster
-                        ? 'w-full sm:w-56 aspect-[4/5] sm:aspect-auto shrink-0 overflow-hidden bg-dark-900'
-                        : 'sm:w-48 h-48 sm:h-auto shrink-0 overflow-hidden'
-                    }
-                  >
-                    <img
-                      src={event.image}
-                      alt={event.title}
-                      className={
-                        isPoster
-                          ? 'w-full h-full object-contain'
-                          : 'w-full h-full object-cover group-hover:scale-105 transition-transform duration-500'
-                      }
-                      loading="lazy"
-                    />
+                  {/* Image panel: same size for every card */}
+                  <div className="relative w-full aspect-[16/10] sm:aspect-auto sm:w-56 shrink-0 overflow-hidden bg-dark-900">
+                    {isPoster ? (
+                      <>
+                        <img
+                          src={event.image}
+                          alt=""
+                          aria-hidden="true"
+                          className="absolute inset-0 w-full h-full object-cover scale-125 blur-2xl opacity-60"
+                          loading="lazy"
+                        />
+                        <img
+                          src={event.image}
+                          alt={event.title}
+                          className="relative w-full h-full object-contain"
+                          loading="lazy"
+                        />
+                      </>
+                    ) : (
+                      <img
+                        src={event.image}
+                        alt={event.title}
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                      />
+                    )}
                   </div>
 
                   {/* Content */}
-                  <div className="p-6 flex-1 flex flex-col">
+                  <div className="p-6 flex-1 flex flex-col min-w-0">
                     <div className="flex flex-wrap gap-2 mb-3">
                       {event.tags.map((tag) => (
                         <span key={tag} className="px-2.5 py-0.5 bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-semibold rounded-full">

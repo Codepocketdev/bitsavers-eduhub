@@ -5,11 +5,15 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    background-color: #0a0a0a;
+    overflow-x: clip;
   }
   body {
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: clip;
+    max-width: 100%;
   }
   ::selection {
     background-color: #F7931A;
