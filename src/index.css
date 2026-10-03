@@ -5,13 +5,15 @@
 @layer base {
   html {
     scroll-behavior: smooth;
-    background-color: #0a0a0a;
+    background-color: #0d0d0d;
+    color-scheme: dark;
     overflow-x: clip;
   }
   body {
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: #0d0d0d;
     overflow-x: clip;
     max-width: 100%;
   }

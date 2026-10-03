@@ -3,7 +3,7 @@ import { createContext, useContext, useReducer, useCallback } from 'react'
 const AppContext = createContext(null)
 
 const initialState = {
-  theme: localStorage.getItem('theme') || 'light',
+  theme: 'dark',
   menuOpen: false,
   toast: null,
   scrollProgress: 0,
@@ -11,9 +11,6 @@ const initialState = {
 
 function appReducer(state, action) {
   switch (action.type) {
-    case 'SET_THEME':
-      localStorage.setItem('theme', action.payload)
-      return { ...state, theme: action.payload }
     case 'TOGGLE_MENU':
       return { ...state, menuOpen: !state.menuOpen }
     case 'CLOSE_MENU':
@@ -32,12 +29,6 @@ function appReducer(state, action) {
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(appReducer, initialState)
 
-  const toggleTheme = useCallback(() => {
-    const newTheme = state.theme === 'light' ? 'dark' : 'light'
-    dispatch({ type: 'SET_THEME', payload: newTheme })
-    document.documentElement.classList.toggle('dark', newTheme === 'dark')
-  }, [state.theme])
-
   const showToast = useCallback((message, type = 'info') => {
     dispatch({ type: 'SET_TOAST', payload: { message, type } })
     setTimeout(() => dispatch({ type: 'CLEAR_TOAST' }), 3000)
@@ -46,7 +37,6 @@ export function AppProvider({ children }) {
   const value = {
     ...state,
     dispatch,
-    toggleTheme,
     showToast,
   }
 
