@@ -136,6 +136,7 @@ export default function UpcomingEvents() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
           {upcomingEvents.map((event, i) => {
+            const isPoster = event.image.startsWith('/images/events/')
             const pickerOpen = openPicker === event.id
             return (
               <motion.div
@@ -145,127 +146,133 @@ export default function UpcomingEvents() {
                 viewport={{ once: true }}
                 transition={{ duration: 0.5, delay: i * 0.1 }}
                 whileHover={{ y: -4 }}
-                className="group bg-gray-50 dark:bg-dark-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-dark-800 shadow-sm hover:shadow-xl transition-all"
+                className={`group bg-gray-50 dark:bg-dark-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-dark-800 shadow-sm hover:shadow-xl transition-all ${
+                  isPoster ? 'md:col-span-2' : ''
+                }`}
               >
-                {/* Image: natural shape, nothing cropped */}
-                <img
-                  src={event.image}
-                  alt={event.title}
-                  className="block w-full h-auto"
-                  loading="lazy"
-                />
+                <div className={isPoster ? 'flex flex-col sm:flex-row' : ''}>
+                  {/* Image: natural shape, nothing cropped */}
+                  <img
+                    src={event.image}
+                    alt={event.title}
+                    className={`block h-auto ${
+                      isPoster ? 'w-full sm:w-72 shrink-0 self-start' : 'w-full'
+                    }`}
+                    loading="lazy"
+                  />
 
-                {/* Content */}
-                <div className="p-6 flex flex-col">
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {event.tags.map((tag) => (
-                      <span key={tag} className="px-2.5 py-0.5 bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-semibold rounded-full">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-
-                  <h3 className="text-lg font-bold text-dark-900 dark:text-white mb-2 group-hover:text-orange-500 transition-colors">
-                    {event.title}
-                  </h3>
-
-                  <p className="text-gray-500 dark:text-dark-400 text-sm mb-4 line-clamp-2">
-                    {event.description}
-                  </p>
-
-                  <div className="space-y-2 text-sm text-gray-500 dark:text-dark-400 mb-4">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
-                      {event.date}
+                  {/* Content */}
+                  <div className="p-6 flex flex-col flex-1 min-w-0">
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {event.tags.map((tag) => (
+                        <span key={tag} className="px-2.5 py-0.5 bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-semibold rounded-full">
+                          {tag}
+                        </span>
+                      ))}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-orange-500 shrink-0" />
-                      {event.time}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
-                      {event.location}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Ticket className="w-4 h-4 text-orange-500 shrink-0" />
-                      {event.spots} spots available
-                    </div>
-                  </div>
 
-                  <div className="flex gap-3">
-                    {event.registerUrl ? (
-                      <a
-                        href={event.registerUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={registerClass}
-                      >
-                        Register
-                      </a>
-                    ) : (
-                      <button className={registerClass}>Register</button>
-                    )}
+                    <h3 className="text-lg font-bold text-dark-900 dark:text-white mb-2 group-hover:text-orange-500 transition-colors">
+                      {event.title}
+                    </h3>
 
-                    {event.calendar && (
-                      <button
-                        onClick={() => setOpenPicker(pickerOpen ? null : event.id)}
-                        className={remindClass}
-                      >
-                        {pickerOpen ? <X className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
-                        Remind Me
-                      </button>
-                    )}
-                  </div>
+                    <p className={`text-gray-500 dark:text-dark-400 text-sm mb-4 ${isPoster ? '' : 'line-clamp-2'}`}>
+                      {event.description}
+                    </p>
 
-                  {/* Calendar picker */}
-                  {event.calendar && pickerOpen && (
-                    <div className="mt-4 p-4 rounded-xl bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 space-y-4">
-                      <div>
-                        <p className={labelClass}>Google Calendar</p>
-                        <div className="flex flex-wrap gap-2">
-                          {event.calendar.dates.map((date) => (
-                            <a
-                              key={date}
-                              href={googleCalendarUrl(event, date)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-3 py-1.5 rounded-full text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white transition-all"
-                            >
-                              {shortDate(date)}
-                            </a>
-                          ))}
-                        </div>
+                    <div className="space-y-2 text-sm text-gray-500 dark:text-dark-400 mb-4">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
+                        {event.date}
                       </div>
-
-                      <div>
-                        <p className={labelClass}>Outlook</p>
-                        <div className="flex flex-wrap gap-2">
-                          {event.calendar.dates.map((date) => (
-                            <a
-                              key={date}
-                              href={outlookCalendarUrl(event, date)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-3 py-1.5 rounded-full text-sm font-semibold border border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-white transition-all"
-                            >
-                              {shortDate(date)}
-                            </a>
-                          ))}
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-orange-500 shrink-0" />
+                        {event.time}
                       </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
+                        {event.location}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Ticket className="w-4 h-4 text-orange-500 shrink-0" />
+                        {event.spots} spots available
+                      </div>
+                    </div>
 
-                      <div>
-                        <p className={labelClass}>Apple Calendar / other</p>
-                        <button
-                          onClick={() => downloadICS(event)}
-                          className="px-4 py-2 rounded-full text-sm font-semibold border border-gray-300 dark:border-dark-600 text-gray-700 dark:text-dark-200 hover:border-orange-500 hover:text-orange-500 transition-all flex items-center gap-2"
+                    <div className="flex gap-3">
+                      {event.registerUrl ? (
+                        <a
+                          href={event.registerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={registerClass}
                         >
-                          <Download className="w-4 h-4" />
-                          Download .ics{event.calendar.dates.length > 1 ? ' (all dates)' : ''}
+                          Register
+                        </a>
+                      ) : (
+                        <button className={registerClass}>Register</button>
+                      )}
+
+                      {event.calendar && (
+                        <button
+                          onClick={() => setOpenPicker(pickerOpen ? null : event.id)}
+                          className={remindClass}
+                        >
+                          {pickerOpen ? <X className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                          Remind Me
                         </button>
-                      </div>
+                      )}
                     </div>
-                  )}
+
+                    {/* Calendar picker */}
+                    {event.calendar && pickerOpen && (
+                      <div className="mt-4 p-4 rounded-xl bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 space-y-4">
+                        <div>
+                          <p className={labelClass}>Google Calendar</p>
+                          <div className="flex flex-wrap gap-2">
+                            {event.calendar.dates.map((date) => (
+                              <a
+                                key={date}
+                                href={googleCalendarUrl(event, date)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded-full text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white transition-all"
+                              >
+                                {shortDate(date)}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className={labelClass}>Outlook</p>
+                          <div className="flex flex-wrap gap-2">
+                            {event.calendar.dates.map((date) => (
+                              <a
+                                key={date}
+                                href={outlookCalendarUrl(event, date)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded-full text-sm font-semibold border border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-white transition-all"
+                              >
+                                {shortDate(date)}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className={labelClass}>Apple Calendar / other</p>
+                          <button
+                            onClick={() => downloadICS(event)}
+                            className="px-4 py-2 rounded-full text-sm font-semibold border border-gray-300 dark:border-dark-600 text-gray-700 dark:text-dark-200 hover:border-orange-500 hover:text-orange-500 transition-all flex items-center gap-2"
+                          >
+                            <Download className="w-4 h-4" />
+                            Download .ics{event.calendar.dates.length > 1 ? ' (all dates)' : ''}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             )
