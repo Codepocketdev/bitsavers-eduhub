@@ -107,9 +107,6 @@ function shortDate(date) {
 export default function UpcomingEvents() {
   const [openPicker, setOpenPicker] = useState(null)
 
-  const registerClass =
-    'flex-1 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-full text-center transition-all hover:-translate-y-0.5'
-
   const remindClass =
     'px-4 py-2.5 rounded-full text-sm font-semibold border transition-all hover:-translate-y-0.5 flex items-center gap-2 border-gray-200 dark:border-dark-700 text-gray-600 dark:text-dark-300 hover:border-orange-500 hover:text-orange-500'
 
@@ -138,6 +135,9 @@ export default function UpcomingEvents() {
           {upcomingEvents.map((event, i) => {
             const isPoster = event.image.startsWith('/images/events/')
             const pickerOpen = openPicker === event.id
+            const registerClass = `px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-full text-center transition-all hover:-translate-y-0.5 ${
+              isPoster ? 'flex-1 sm:flex-none sm:px-10' : 'flex-1'
+            }`
             return (
               <motion.div
                 key={event.id}
@@ -147,7 +147,7 @@ export default function UpcomingEvents() {
                 transition={{ duration: 0.5, delay: i * 0.1 }}
                 whileHover={{ y: -4 }}
                 className={`group bg-gray-50 dark:bg-dark-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-dark-800 shadow-sm hover:shadow-xl transition-all ${
-                  isPoster ? 'md:col-span-2' : ''
+                  isPoster ? 'md:col-span-2 md:max-w-4xl md:mx-auto md:w-full' : ''
                 }`}
               >
                 <div className={isPoster ? 'flex flex-col sm:flex-row' : ''}>
@@ -162,7 +162,7 @@ export default function UpcomingEvents() {
                   />
 
                   {/* Content */}
-                  <div className="p-6 flex flex-col flex-1 min-w-0">
+                  <div className="p-6 sm:p-8 flex flex-col flex-1 min-w-0">
                     <div className="flex flex-wrap gap-2 mb-3">
                       {event.tags.map((tag) => (
                         <span key={tag} className="px-2.5 py-0.5 bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-semibold rounded-full">
@@ -179,7 +179,7 @@ export default function UpcomingEvents() {
                       {event.description}
                     </p>
 
-                    <div className="space-y-2 text-sm text-gray-500 dark:text-dark-400 mb-4">
+                    <div className="space-y-2 text-sm text-gray-500 dark:text-dark-400 mb-5">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
                         {event.date}
