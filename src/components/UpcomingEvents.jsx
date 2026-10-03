@@ -113,11 +113,12 @@ const labelClass =
 const remindClass =
   'px-4 py-2.5 rounded-full text-sm font-semibold border transition-all hover:-translate-y-0.5 flex items-center gap-2 border-gray-300 dark:border-dark-700 text-gray-600 dark:text-dark-300 hover:border-orange-500 hover:text-orange-500'
 
+// Same compact size on every card
+const registerClass =
+  'px-10 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-full text-center transition-all hover:-translate-y-0.5'
+
 function EventDetails({ event, featured, openPicker, setOpenPicker }) {
   const pickerOpen = openPicker === event.id
-  const registerClass = `px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-full text-center transition-all hover:-translate-y-0.5 ${
-    featured ? 'flex-1 sm:flex-none sm:px-10' : 'flex-1'
-  }`
 
   return (
     <>
@@ -156,7 +157,7 @@ function EventDetails({ event, featured, openPicker, setOpenPicker }) {
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         {event.registerUrl ? (
           <a
             href={event.registerUrl}
@@ -269,9 +270,6 @@ export default function UpcomingEvents() {
           viewport={{ once: true }}
           className="text-center mb-16"
         >
-          <span className="inline-block bg-green-500/10 text-green-600 dark:text-green-400 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider mb-4">
-            Coming Up
-          </span>
           <h2 className="text-3xl md:text-5xl font-extrabold text-dark-900 dark:text-white mb-4">Upcoming Events</h2>
           <p className="text-gray-500 dark:text-dark-400 max-w-xl mx-auto">
             Mark your calendar. Don't miss out on our upcoming workshops, bootcamps, and community events.
