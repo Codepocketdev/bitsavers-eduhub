@@ -42,16 +42,16 @@ export default function About() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              whileInView={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
             >
               <h2 className="text-3xl md:text-4xl font-extrabold text-dark-900 dark:text-white mb-6">
                 Who We Are
               </h2>
               <p className="text-gray-600 dark:text-dark-400 leading-relaxed mb-6">
-                Bitsavers EduHub is dedicated to educating individuals, students, and entrepreneurs on Bitcoin 
-                adoption, payments, and financial sovereignty. We empower communities by providing practical 
+                Bitsavers EduHub is dedicated to educating individuals, students, and entrepreneurs on Bitcoin
+                adoption, payments, and financial sovereignty. We empower communities by providing practical
                 knowledge on how to earn, spend, and store Bitcoin securely.
               </p>
               <p className="text-gray-600 dark:text-dark-400 leading-relaxed mb-8">
@@ -78,21 +78,21 @@ export default function About() {
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               className="relative"
             >
               <div className="rounded-2xl overflow-hidden shadow-2xl">
                 <img
-                  src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=600&h=700&fit=crop"
-                  alt="Bitcoin Education Workshop"
-                  className="w-full h-auto object-cover"
+                  src="/images/about/our-story.jpg"
+                  alt="Bitsavers EduHub community"
+                  className="block w-full h-auto"
                   loading="lazy"
                 />
               </div>
               <div className="absolute -bottom-6 -left-6 bg-orange-500 text-white px-8 py-6 rounded-xl shadow-xl">
-                <span className="block text-4xl font-extrabold">5+</span>
+                <span className="block text-4xl font-extrabold">3+</span>
                 <span className="text-xs font-semibold uppercase tracking-wider">Years of Impact</span>
               </div>
             </motion.div>
