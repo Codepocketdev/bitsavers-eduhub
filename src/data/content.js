@@ -183,7 +183,7 @@ export const upcomingEvents = [
   {
     id: 'she-leads-mombasa',
     title: 'She Leads Mombasa',
-    date: 'September 12, 2026',
+    date: 'Date to be confirmed',
     time: '10:00 AM - 4:00 PM',
     location: 'Mombasa, Kenya',
     description: 'Expanding our She Leads initiative to the coast. A full-day workshop for women interested in Bitcoin, financial literacy, and entrepreneurship.',

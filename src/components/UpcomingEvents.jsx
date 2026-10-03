@@ -236,6 +236,7 @@ function EventDetails({ event, featured, openPicker, setOpenPicker }) {
 export default function UpcomingEvents() {
   const [openPicker, setOpenPicker] = useState(null)
   const [lightbox, setLightbox] = useState(null)
+  const [tappedPoster, setTappedPoster] = useState(null)
 
   const featured = upcomingEvents.filter(isFeatured)
   const regular = upcomingEvents.filter((e) => !isFeatured(e))
@@ -253,6 +254,11 @@ export default function UpcomingEvents() {
       document.body.style.overflow = prevOverflow
     }
   }, [lightbox])
+
+  const openLightbox = (event) => {
+    setTappedPoster(null)
+    setLightbox(event)
+  }
 
   return (
     <section className="py-24 bg-white dark:bg-dark-950 overflow-hidden">
@@ -274,44 +280,65 @@ export default function UpcomingEvents() {
 
         {/* Featured events (posters): no card, poster at its real 4:5 shape */}
         <div className="space-y-16 mb-16">
-          {featured.map((event) => (
-            <motion.article
-              key={event.id}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="flex flex-col md:flex-row md:items-center gap-8 md:gap-12">
-                <button
-                  type="button"
-                  onClick={() => setLightbox(event)}
-                  aria-label={`View full poster for ${event.title}`}
-                  className="relative block w-full md:w-80 lg:w-96 shrink-0 aspect-[4/5] overflow-hidden rounded-2xl bg-dark-900 cursor-zoom-in"
-                >
-                  <img
-                    src={event.image}
-                    alt={event.title}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  <span className="absolute top-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 text-white text-xs font-semibold">
-                    <ZoomIn className="w-3.5 h-3.5" />
-                    View full poster
-                  </span>
-                </button>
+          {featured.map((event) => {
+            const tapped = tappedPoster === event.id
+            return (
+              <motion.article
+                key={event.id}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5 }}
+              >
+                <div className="flex flex-col md:flex-row md:items-center gap-8 md:gap-12">
+                  <div className="group relative w-full md:w-80 lg:w-96 shrink-0 aspect-[4/5] overflow-hidden rounded-2xl bg-dark-900">
+                    {/* Tap the poster to reveal the view button */}
+                    <button
+                      type="button"
+                      onClick={() => setTappedPoster(tapped ? null : event.id)}
+                      aria-label={`Show options for ${event.title} poster`}
+                      className="absolute inset-0 w-full h-full"
+                    >
+                      <img
+                        src={event.image}
+                        alt={event.title}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    </button>
 
-                <div className="flex flex-col flex-1 min-w-0">
-                  <EventDetails
-                    event={event}
-                    featured
-                    openPicker={openPicker}
-                    setOpenPicker={setOpenPicker}
-                  />
+                    {/* Dim + view button: only after a tap (or on hover for desktop) */}
+                    <div
+                      className={`pointer-events-none absolute inset-0 bg-black/30 transition-opacity duration-200 ${
+                        tapped ? 'opacity-100' : 'opacity-0 md:group-hover:opacity-100'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => openLightbox(event)}
+                      className={`absolute top-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/80 text-white text-xs font-semibold transition-opacity duration-200 ${
+                        tapped
+                          ? 'opacity-100'
+                          : 'opacity-0 pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto'
+                      }`}
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                      View full poster
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <EventDetails
+                      event={event}
+                      featured
+                      openPicker={openPicker}
+                      setOpenPicker={setOpenPicker}
+                    />
+                  </div>
                 </div>
-              </div>
-            </motion.article>
-          ))}
+              </motion.article>
+            )
+          })}
         </div>
 
         {/* Everything else: no card, same 16:10 image frame */}
