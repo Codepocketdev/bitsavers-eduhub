@@ -42,9 +42,14 @@ export default function Programs() {
                 <div className={isEven ? '' : 'lg:order-2'}>
                   <div className="rounded-2xl overflow-hidden shadow-xl">
                     {program.video ? (
-                      <EventVideoFrame src={program.video} heightClass="h-80" />
+                      <EventVideoFrame src={program.video} fit="natural" />
                     ) : (
-                      <img src={program.image} alt={program.title} className="w-full h-80 object-cover" loading="lazy" />
+                      <img
+                        src={program.image}
+                        alt={program.title}
+                        className="block w-full h-auto"
+                        loading="lazy"
+                      />
                     )}
                   </div>
                 </div>
