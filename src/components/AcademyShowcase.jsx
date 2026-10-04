@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Volume2, VolumeX, ArrowRight } from 'lucide-react'
 
@@ -10,13 +10,34 @@ const points = [
 
 export default function AcademyShowcase() {
   const videoRef = useRef(null)
+  const hideTimer = useRef(null)
   const [muted, setMuted] = useState(true)
+  const [showControl, setShowControl] = useState(false)
 
-  const toggleSound = () => {
+  const startHideTimer = () => {
+    clearTimeout(hideTimer.current)
+    hideTimer.current = setTimeout(() => setShowControl(false), 3000)
+  }
+
+  const handleVideoTap = () => {
+    clearTimeout(hideTimer.current)
+    setShowControl((prev) => {
+      if (!prev) {
+        hideTimer.current = setTimeout(() => setShowControl(false), 3000)
+      }
+      return !prev
+    })
+  }
+
+  useEffect(() => () => clearTimeout(hideTimer.current), [])
+
+  const toggleSound = (e) => {
+    e.stopPropagation()
     const v = videoRef.current
     if (!v) return
     v.muted = !v.muted
     setMuted(v.muted)
+    startHideTimer()
   }
 
   return (
@@ -65,8 +86,11 @@ export default function AcademyShowcase() {
           transition={{ duration: 0.6 }}
           className="relative mx-auto w-64 sm:w-72"
         >
-          <div className="absolute -inset-10 bg-orange-500/10 blur-3xl rounded-full" />
-          <div className="relative rounded-[2.5rem] border-[6px] border-dark-800 overflow-hidden aspect-[9/16] bg-black">
+          <div className="absolute -inset-10 bg-orange-500/10 blur-3xl rounded-full pointer-events-none" />
+          <div
+            onClick={handleVideoTap}
+            className="relative rounded-[2.5rem] border-[6px] border-dark-800 overflow-hidden aspect-[9/16] bg-black cursor-pointer"
+          >
             <video
               ref={videoRef}
               src="/videos/trezor-academy.mp4"
@@ -74,12 +98,15 @@ export default function AcademyShowcase() {
               muted
               loop
               playsInline
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover pointer-events-none"
             />
             <button
+              type="button"
               onClick={toggleSound}
               aria-label={muted ? 'Unmute video' : 'Mute video'}
-              className="absolute bottom-4 right-4 w-10 h-10 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center transition-colors"
+              className={`absolute bottom-4 right-4 w-10 h-10 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center transition-opacity duration-300 ${
+                showControl ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              }`}
             >
               {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
             </button>
