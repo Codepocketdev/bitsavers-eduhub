@@ -19,6 +19,7 @@ export default function Navbar() {
   useEffect(() => {
     dispatch({ type: 'CLOSE_MENU' })
   }, [location.pathname, dispatch])
+  useEffect(() => { window.scrollTo(0, 0) }, [location.pathname])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') dispatch({ type: 'CLOSE_MENU' })
