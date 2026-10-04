@@ -57,11 +57,14 @@ function Group({ title, subtitle, items, onSelect }) {
             <span className="font-bold text-dark-900 dark:text-white group-hover:text-orange-500 transition-colors">
               {item.name}
             </span>
-            {item.description && (
+            {(item.tagline || item.description) && (
               <span className="mt-1 text-sm text-gray-500 dark:text-dark-400 leading-relaxed line-clamp-2">
-                {item.description}
+                {item.tagline || item.description}
               </span>
             )}
+            <span className="mt-2 text-xs font-semibold text-orange-500 opacity-70 group-hover:opacity-100 transition-opacity">
+              Learn more
+            </span>
           </motion.button>
         ))}
       </div>
@@ -98,7 +101,7 @@ function DetailModal({ item, onClose }) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.94, opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="bg-dark-900 border border-dark-800 rounded-2xl w-full max-w-sm p-6 relative max-h-[calc(100vh-2rem)] overflow-y-auto"
+        className="bg-dark-900 border border-dark-800 rounded-2xl w-full max-w-md p-6 relative max-h-[calc(100vh-2rem)] overflow-y-auto"
       >
         <button
           type="button"
@@ -114,7 +117,7 @@ function DetailModal({ item, onClose }) {
             <Logo item={item} className="w-full h-full" />
           </div>
           <div>
-            <div className="font-extrabold text-xl text-white mb-2">{item.name}</div>
+            <div className="font-extrabold text-xl text-white mb-3">{item.name}</div>
             {item.description && (
               <div className="text-sm text-dark-300 leading-relaxed">{item.description}</div>
             )}

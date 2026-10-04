@@ -3,7 +3,8 @@
     {
       "id": "trezor",
       "name": "Trezor",
-      "description": "Hardware wallet maker and sponsor of Trezor Academy Kenya.",
+      "tagline": "Hardware wallets and Trezor Academy.",
+      "description": "Trezor makes hardware wallets that keep your Bitcoin private keys offline and secure. Through Trezor Academy, it sponsors Bitcoin education sessions across Kenya, including our Campus Caravan at Kenyatta University. Their support helps us put practical self-custody skills in front of students.",
       "url": "https://trezor.io",
       "logo": "/images/partners/trezor.jpg"
     }
@@ -12,14 +13,16 @@
     {
       "id": "afribit",
       "name": "Afribit Kibera",
-      "description": "Bitcoin circular economy in Kibera, Nairobi.",
+      "tagline": "Bitcoin circular economy in Kibera.",
+      "description": "Afribit Kibera is a community-led Bitcoin circular economy in Kibera, Nairobi, where residents and local businesses earn, spend and save in Bitcoin over the Lightning Network. They collaborate with Bitsavers EduHub on bringing Bitcoin education and everyday adoption to local communities.",
       "url": "",
       "logo": "/images/partners/afribit.jpg"
     },
     {
       "id": "blink",
       "name": "Blink",
-      "description": "Bitcoin Lightning wallet.",
+      "tagline": "Bitcoin Lightning wallet.",
+      "description": "Blink is a Bitcoin Lightning wallet built for everyday payments, making it simple to send and receive Bitcoin instantly with low fees. It supports Bitcoin communities and circular economies around the world. For our learners and merchants, it is a practical way to take their first steps with Bitcoin.",
       "url": "https://blink.sv",
       "logo": "/images/partners/blink.jpg"
     }
