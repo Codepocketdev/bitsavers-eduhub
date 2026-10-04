@@ -121,6 +121,7 @@ export const navLinks = [
   { path: '/', label: 'Home' },
   { path: '/about', label: 'About' },
   { path: '/programs', label: 'Programs' },
+  { path: '/events', label: 'Events' },
   { path: '/team', label: 'Team' },
   { path: '/faq', label: 'FAQ' },
   { path: '/sponsors', label: 'Sponsors' },
