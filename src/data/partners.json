@@ -1,0 +1,27 @@
+{
+  "sponsors": [
+    {
+      "id": "trezor",
+      "name": "Trezor",
+      "description": "Hardware wallet maker and sponsor of Trezor Academy Kenya.",
+      "url": "https://trezor.io",
+      "logo": "/images/partners/trezor.jpg"
+    }
+  ],
+  "collaborators": [
+    {
+      "id": "afribit",
+      "name": "Afribit Kibera",
+      "description": "Bitcoin circular economy in Kibera, Nairobi.",
+      "url": "",
+      "logo": "/images/partners/afribit.jpg"
+    },
+    {
+      "id": "blink",
+      "name": "Blink",
+      "description": "Bitcoin Lightning wallet.",
+      "url": "https://blink.sv",
+      "logo": "/images/partners/blink.jpg"
+    }
+  ]
+}
