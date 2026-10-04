@@ -46,15 +46,12 @@ export default function Navbar() {
 
             {/* Logo */}
             <Link to="/" className="flex items-center gap-3 group">
-              <div className="relative">
-                <img
-                  src="/images/logo.jpeg"
-                  alt="Bitsavers EduHub"
-                  className="w-10 h-10 rounded-full object-cover border-2 border-orange-500 group-hover:scale-110 transition-transform"
-                  loading="eager"
-                />
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-dark-950" />
-              </div>
+              <img
+                src="/images/logo.jpeg"
+                alt="Bitsavers EduHub"
+                className="w-10 h-10 rounded-full object-cover border-2 border-orange-500 group-hover:scale-110 transition-transform"
+                loading="eager"
+              />
               <span className="font-bold text-lg text-white">
                 Bitsavers EduHub
               </span>
