@@ -1,5 +1,4 @@
 import Hero from '../components/Hero'
-import Pillars from '../components/Pillars'
 import ProgramsPreview from '../components/ProgramsPreview'
 import RecentEvents from '../components/RecentEvents'
 import UpcomingEvents from '../components/UpcomingEvents'
@@ -10,7 +9,8 @@ export default function Home() {
   return (
     <>
       <Hero />
-      <Pillars />
+      {/* Anchor for the hero's scroll arrow (href="#pillars") */}
+      <div id="pillars" />
       <ProgramsPreview />
       <RecentEvents />
       <UpcomingEvents />

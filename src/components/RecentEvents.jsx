@@ -25,7 +25,7 @@ export default function RecentEvents() {
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-10 gap-y-14">
           {recentEvents.map((event, i) => (
             <motion.div
               key={event.id}
@@ -33,49 +33,49 @@ export default function RecentEvents() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: i * 0.1 }}
-              whileHover={{ y: -6 }}
               onClick={() => setSelected(event)}
-              className="group bg-white dark:bg-dark-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-dark-800 shadow-md hover:shadow-2xl transition-all cursor-pointer"
+              className="group cursor-pointer"
             >
-              {event.video ? (
-                <EventVideoFrame src={event.video} tags={event.tags} />
-              ) : (
-                <div className="h-56 overflow-hidden relative">
-                  <img
-                    src={event.image}
-                    alt={event.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-4 left-4 flex gap-2">
-                    {event.tags.map((tag) => (
-                      <span key={tag} className="px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full">
-                        {tag}
-                      </span>
-                    ))}
+              <div className="rounded-2xl overflow-hidden mb-6">
+                {event.video ? (
+                  <EventVideoFrame src={event.video} tags={event.tags} heightClass="h-64" />
+                ) : (
+                  <div className="h-64 overflow-hidden relative">
+                    <img
+                      src={event.image}
+                      alt={event.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-4 left-4 flex gap-2">
+                      {event.tags.map((tag) => (
+                        <span key={tag} className="px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              <div className="p-6">
-                <h3 className="text-lg font-bold text-dark-900 dark:text-white mb-2 group-hover:text-orange-500 transition-colors">
-                  {event.title}
-                </h3>
-                <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-dark-400 mb-3">
-                  {event.date && (
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-4 h-4 text-orange-500" />
-                      {event.date}
-                    </span>
-                  )}
+                )}
+              </div>
+
+              <h3 className="text-xl font-bold text-dark-900 dark:text-white mb-2 group-hover:text-orange-500 transition-colors">
+                {event.title}
+              </h3>
+              <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-dark-400 mb-3">
+                {event.date && (
                   <span className="flex items-center gap-1">
-                    <Users className="w-4 h-4 text-orange-500" />
-                    {event.attendees}
+                    <Calendar className="w-4 h-4 text-orange-500" />
+                    {event.date}
                   </span>
-                </div>
-                <p className="text-gray-500 dark:text-dark-400 text-sm line-clamp-2">{event.description}</p>
-                <div className="mt-4 flex items-center gap-1 text-orange-500 text-sm font-semibold">
-                  Read More <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </div>
+                )}
+                <span className="flex items-center gap-1">
+                  <Users className="w-4 h-4 text-orange-500" />
+                  {event.attendees}
+                </span>
+              </div>
+              <p className="text-gray-500 dark:text-dark-400 text-sm line-clamp-2">{event.description}</p>
+              <div className="mt-4 flex items-center gap-1 text-orange-500 text-sm font-semibold">
+                Read More <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </div>
             </motion.div>
           ))}
@@ -108,10 +108,10 @@ export default function RecentEvents() {
                     loop
                     controls
                     playsInline
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                   />
                 ) : (
-                  <img src={selected.image} alt={selected.title} className="w-full h-full object-cover" />
+                  <img src={selected.image} alt={selected.title} className="w-full h-full object-contain" />
                 )}
                 <button
                   onClick={() => setSelected(null)}
