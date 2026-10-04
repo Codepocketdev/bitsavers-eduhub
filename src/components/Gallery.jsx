@@ -50,7 +50,7 @@ export default function Gallery() {
           </span>
           <h2 className="text-3xl md:text-5xl font-extrabold text-dark-900 dark:text-white mb-4">Event Gallery</h2>
           <p className="text-gray-500 dark:text-dark-400 max-w-xl mx-auto">
-            Snapshots from Bitcoin Pizza Day, Campus Caravan, She Leads, and more.
+            Moments from our community events and workshops.
           </p>
         </motion.div>
 
