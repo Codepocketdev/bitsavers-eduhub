@@ -61,26 +61,7 @@ export default function Contact() {
   }
 
   return (
-    <div className="pt-24">
-      <section className="bg-gradient-to-br from-dark-900 to-dark-800 py-20">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-4xl md:text-6xl font-extrabold text-white mb-6"
-          >
-            Get In Touch
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="text-white/70 text-lg max-w-xl mx-auto"
-          >
-            Have a question or want to collaborate? We'd love to hear from you.
-          </motion.p>
-        </div>
-      </section>
+    <div className="pt-12">
 
       <section className="py-24 bg-white dark:bg-dark-950">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">

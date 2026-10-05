@@ -8,34 +8,8 @@ const features = [
 
 export default function About() {
   return (
-    <div className="pt-24">
+    <div className="pt-12">
       {/* Header */}
-      <section className="bg-gradient-to-br from-dark-900 to-dark-800 py-20">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          <motion.span
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="inline-block bg-orange-500/15 text-orange-300 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider mb-4"
-          >
-            Our Story
-          </motion.span>
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-4xl md:text-6xl font-extrabold text-white mb-6"
-          >
-            Bitsavers EduHub
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="text-white/70 text-lg max-w-2xl mx-auto"
-          >
-            Africa's Bitcoin Education Hub — empowering communities through knowledge, adoption, and innovation.
-          </motion.p>
-        </div>
-      </section>
 
       {/* Content */}
       <section className="py-24 bg-gray-50 dark:bg-dark-950">
