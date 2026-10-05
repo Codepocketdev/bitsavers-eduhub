@@ -102,7 +102,7 @@ export default function Contact() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-500 dark:text-dark-400">Phone</p>
-                    <p className="font-medium text-dark-900 dark:text-white">+254 700 000 000</p>
+                    <p className="font-medium text-dark-900 dark:text-white">+254 746 709 136</p>
                   </div>
                 </div>
 
