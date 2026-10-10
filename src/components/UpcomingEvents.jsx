@@ -151,14 +151,16 @@ function EventDetails({ event, featured, openPicker, setOpenPicker }) {
           <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
           {event.location}
         </div>
+        {event.spots && (
         <div className="flex items-center gap-2">
           <Ticket className="w-4 h-4 text-orange-500 shrink-0" />
           {event.spots} spots available
         </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3">
-        {event.registerUrl ? (
+        {event.registerUrl && (
           <a
             href={event.registerUrl}
             target="_blank"
@@ -167,8 +169,6 @@ function EventDetails({ event, featured, openPicker, setOpenPicker }) {
           >
             Register
           </a>
-        ) : (
-          <button className={registerClass}>Register</button>
         )}
 
         {event.calendar && (

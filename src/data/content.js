@@ -169,6 +169,17 @@ export const recentEvents = [
 // Leave end out if unconfirmed; the calendar file defaults to 4 hours.
 export const upcomingEvents = [
   {
+    id: 'campus-caravan-joost',
+    title: 'Campus Caravan — JOOUST Kisumu',
+    date: 'October 15, 2026',
+    time: '9:00 AM',
+    calendar: { dates: ['2026-10-15'], start: '09:00' },
+    location: 'Jaramogi Oginga Odinga University (JOOUST Kisumu Campus)',
+    description: 'The Campus Caravan heads to Kisumu! Join us at JOOUST for an interactive session on Bitcoin basics. Follow @biteduhub for updates.',
+    image: '/images/events/bitcoin-campus-caravan.jpg',
+    tags: ['Education', 'Campus'],
+  },
+  {
     id: 'campus-caravan-kenyatta',
     title: 'Campus Caravan — Kenyatta University',
     date: 'October 16, 17 & 24, 2026',
@@ -180,29 +191,6 @@ export const upcomingEvents = [
     registerUrl: 'https://bit.ly/4iUIuwi',
     spots: 120,
     tags: ['Education', 'Campus'],
-  },
-  {
-    id: 'she-leads-mombasa',
-    title: 'She Leads Mombasa',
-    date: 'Date to be confirmed',
-    time: '10:00 AM - 4:00 PM',
-    location: 'Mombasa, Kenya',
-    description: 'Expanding our She Leads initiative to the coast. A full-day workshop for women interested in Bitcoin, financial literacy, and entrepreneurship.',
-    image: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800&h=500&fit=crop',
-    spots: 80,
-    tags: ['Women', 'Workshop'],
-  },
-  {
-    id: 'merchant-onboarding-drive',
-    title: 'Merchant Onboarding Drive',
-    date: 'November 18, 2026',
-    time: '9:00 AM - 6:00 PM',
-    calendar: { dates: ['2026-11-18'], start: '09:00', end: '18:00' },
-    location: 'Nairobi CBD',
-    description: 'Join our team as we walk the streets of Nairobi, onboarding local merchants to accept Bitcoin via Lightning. Training, POS setup, and support provided on-site.',
-    image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&h=500&fit=crop',
-    spots: 25,
-    tags: ['Adoption', 'Community'],
   },
 ]
 
