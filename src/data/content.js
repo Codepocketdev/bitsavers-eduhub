@@ -188,7 +188,7 @@ export const upcomingEvents = [
     location: 'Kenyatta University Main Campus',
     description: 'The Campus Caravan continues! Join us for an interactive session on Bitcoin basics, Lightning Network demos, and a Q&A with industry experts.',
     image: '/images/events/ku-caravan-poster.jpg',
-    registerUrl: 'https://bit.ly/4iUIuwi',
+    registerUrl: 'https://luma.com/r56muu1t',
     spots: 120,
     tags: ['Education', 'Campus'],
   },
